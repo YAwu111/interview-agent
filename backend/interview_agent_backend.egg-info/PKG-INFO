@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: interview-agent-backend
+Version: 0.1.0
+Requires-Python: >=3.13
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic
+Requires-Dist: pydantic-settings
+Requires-Dist: sqlalchemy>=2
+Requires-Dist: alembic
+Requires-Dist: psycopg[binary]
+Requires-Dist: redis
+Requires-Dist: pyjwt
+Requires-Dist: structlog
+Requires-Dist: authlib
+Requires-Dist: pwdlib[argon2]
+Requires-Dist: python-multipart
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: httpx; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: import-linter; extra == "dev"

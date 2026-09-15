@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "interview-agent-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "pydantic-settings",
+    "email-validator",
+    "sqlalchemy>=2",
+    "alembic",
+    "psycopg[binary]",
+    "redis",
+    "pyjwt",
+    "structlog",
+    "authlib",
+    "pwdlib[argon2]",
+    "python-multipart",
+    "itsdangerous",
+    "httpx",
+    "pgvector",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "import-linter",
+]
+rag = [
+    "sentence-transformers",
+    "torch",
+    "jieba",
+    "pypdf",
+]
+agent = [
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "langsmith",
+]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+exclude = [".venv", "app/data/db/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "ASYNC"]
+
+# 依赖方向硬约束：access → domains/orchestration → data → core；telemetry 只依赖 core/data/自身
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "core 不依赖任何上层"
+type = "forbidden"
+source_modules = "app.core"
+forbidden_modules = ["app.access", "app.domains", "app.orchestration", "app.data", "app.telemetry"]
+
+[[tool.importlinter.contracts]]
+name = "data 不依赖 access/domains/orchestration/telemetry"
+type = "forbidden"
+source_modules = "app.data"
+forbidden_modules = ["app.access", "app.domains", "app.orchestration", "app.telemetry"]
+
+[[tool.importlinter.contracts]]
+name = "domains 之间禁止互引"
+type = "independence"
+modules = ["app.domains.chat", "app.domains.knowledge", "app.domains.resources", "app.domains.settings"]
+
+[[tool.importlinter.contracts]]
+name = "domains 不依赖 access/orchestration/telemetry"
+type = "forbidden"
+source_modules = "app.domains"
+forbidden_modules = ["app.access", "app.orchestration", "app.telemetry"]
+
+[[tool.importlinter.contracts]]
+name = "orchestration 不依赖 access/domains/telemetry"
+type = "forbidden"
+source_modules = "app.orchestration"
+forbidden_modules = ["app.access", "app.domains", "app.telemetry"]
+
+[[tool.importlinter.contracts]]
+name = "telemetry 只依赖 core/data/自身"
+type = "forbidden"
+source_modules = "app.telemetry"
+forbidden_modules = ["app.access", "app.domains", "app.orchestration"]
