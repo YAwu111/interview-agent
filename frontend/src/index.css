@@ -118,3 +118,25 @@
     @apply font-sans;
   }
 }
+
+/* 主题圆形揭示：关掉默认 crossfade，新主题快照用 clip-path 匀速展开 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+  animation: theme-circle-reveal 0.5s linear;
+}
+@keyframes theme-circle-reveal {
+  from {
+    clip-path: circle(0 at var(--theme-x) var(--theme-y));
+  }
+  to {
+    clip-path: circle(var(--theme-r) at var(--theme-x) var(--theme-y));
+  }
+}

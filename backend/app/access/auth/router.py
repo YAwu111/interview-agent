@@ -56,9 +56,12 @@ async def register(
 async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)) -> AuthResponse:
     user = await repository.get_user_by_email(session, body.email)
     # 统一 401，不区分账号不存在/密码错误（防枚举）
-    if user is None or user.password_hash is None:
+    password_hash = user.password_hash if user is not None else None
+    if password_hash is None:
+        # 计时均摊：也跑一次 Argon2，避免“用户不存在”返回明显更快
+        service.verify_password(body.password, service.DUMMY_PASSWORD_HASH)
         raise BAD_CREDENTIALS
-    if not service.verify_password(body.password, user.password_hash):
+    if not service.verify_password(body.password, password_hash):
         raise BAD_CREDENTIALS
     return await _auth_response(session, user)
 

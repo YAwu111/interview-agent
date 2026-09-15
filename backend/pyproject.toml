@@ -37,6 +37,7 @@ rag = [
     "torch",
     "jieba",
     "pypdf",
+    "python-docx",
 ]
 agent = [
     "langgraph",

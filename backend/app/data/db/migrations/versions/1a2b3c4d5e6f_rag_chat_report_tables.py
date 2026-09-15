@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_documents_base_id", "documents", ["base_id"])
-    op.create_index("ix_documents_content_hash", "documents", ["content_hash"], unique=True)
+    op.create_index("ix_documents_content_hash", "documents", ["content_hash"])
 
     op.create_table(
         "chunks",

@@ -4,13 +4,13 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useSettings } from '../app/useSettings'
 import { useThemeStore } from '../app/themeStore'
+import { switchTheme } from '../app/switchTheme'
 import { t } from '@/shared/lib/locale/zh'
 
 /** 外观：主题切换（themeStore 联动）+ 偏好 */
 export function AppearanceForm() {
   const { preferences, updatePreferences } = useSettings()
   const mode = useThemeStore((s) => s.mode)
-  const setTheme = useThemeStore((s) => s.set)
 
   return (
     <div className="flex flex-col gap-5">
@@ -21,7 +21,7 @@ export function AppearanceForm() {
             <button
               key={m}
               type="button"
-              onClick={() => setTheme(m)}
+              onClick={(e) => switchTheme(m, e.currentTarget)}
               className={cn(
                 'flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm transition-colors',
                 mode === m ? 'border-primary bg-primary/5 text-primary' : 'hover:bg-accent',

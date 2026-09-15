@@ -1,5 +1,6 @@
 """混合双路检索：dense + sparse → RRF → 精排 → top_k。融合为纯函数，可离线单测。"""
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -53,7 +54,10 @@ class HybridRetriever:
         hits = [by_id[i] for i in top10]
 
         if self.reranker and len(hits) > 1:
-            order = self.reranker.rerank(query, [h["text"] for h in hits])
+            # CrossEncoder.predict 是阻塞 CPU 调用，丢线程池避免冻结事件循环
+            order = await asyncio.to_thread(
+                self.reranker.rerank, query, [h["text"] for h in hits]
+            )
             hits = [hits[i] for i, _ in order[:limit]]
         else:
             hits = hits[:limit]

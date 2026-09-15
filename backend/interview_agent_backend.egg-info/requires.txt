@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 pydantic-settings
+email-validator
 sqlalchemy>=2
 alembic
 psycopg[binary]
@@ -11,9 +12,23 @@ structlog
 authlib
 pwdlib[argon2]
 python-multipart
+itsdangerous
+httpx
+pgvector
+
+[agent]
+langgraph
+langgraph-checkpoint-postgres
+langsmith
 
 [dev]
 pytest
-httpx
 ruff
 import-linter
+
+[rag]
+sentence-transformers
+torch
+jieba
+pypdf
+python-docx

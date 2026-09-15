@@ -37,7 +37,8 @@ class Document(Base):
     size: Mapped[int] = mapped_column(Integer)
     # parsing | indexing | ready | failed
     status: Mapped[str] = mapped_column(String(16), default="parsing")
-    content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # 去重在上层按 (base_id, content_hash) 处理，避免数据库唯一约束把重复上传变成 500
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

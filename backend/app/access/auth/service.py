@@ -29,6 +29,10 @@ def verify_password(password: str, password_hash: str) -> bool:
     return _password_hash.verify(password, password_hash)
 
 
+# 登录计时均摊用：用户不存在/无密码时也跑一次 Argon2，避免计时枚举邮箱
+DUMMY_PASSWORD_HASH = hash_password("timing-equalizer-dummy")
+
+
 def _encode(subject: str, token_type: str, expires_delta: timedelta) -> str:
     now = datetime.now(UTC)
     payload = {

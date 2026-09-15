@@ -6,6 +6,7 @@ Requires-Dist: fastapi
 Requires-Dist: uvicorn[standard]
 Requires-Dist: pydantic
 Requires-Dist: pydantic-settings
+Requires-Dist: email-validator
 Requires-Dist: sqlalchemy>=2
 Requires-Dist: alembic
 Requires-Dist: psycopg[binary]
@@ -15,8 +16,20 @@ Requires-Dist: structlog
 Requires-Dist: authlib
 Requires-Dist: pwdlib[argon2]
 Requires-Dist: python-multipart
+Requires-Dist: itsdangerous
+Requires-Dist: httpx
+Requires-Dist: pgvector
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
-Requires-Dist: httpx; extra == "dev"
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: import-linter; extra == "dev"
+Provides-Extra: rag
+Requires-Dist: sentence-transformers; extra == "rag"
+Requires-Dist: torch; extra == "rag"
+Requires-Dist: jieba; extra == "rag"
+Requires-Dist: pypdf; extra == "rag"
+Requires-Dist: python-docx; extra == "rag"
+Provides-Extra: agent
+Requires-Dist: langgraph; extra == "agent"
+Requires-Dist: langgraph-checkpoint-postgres; extra == "agent"
+Requires-Dist: langsmith; extra == "agent"

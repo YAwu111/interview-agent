@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/features/auth/app/useAuth'
 import { useThemeStore } from '@/features/settings/app/themeStore'
+import { switchTheme } from '@/features/settings/app/switchTheme'
 import { t } from '@/shared/lib/locale/zh'
 
 const NAV = [
@@ -27,7 +28,6 @@ export function AppShell() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const mode = useThemeStore((s) => s.mode)
-  const toggle = useThemeStore((s) => s.toggle)
 
   return (
     <div className="flex h-svh flex-col bg-background">
@@ -61,7 +61,7 @@ export function AppShell() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={toggle}
+            onClick={(e) => switchTheme(mode === 'light' ? 'dark' : 'light', e.currentTarget)}
             aria-label={t.settings.theme}
           >
             {mode === 'light' ? <Moon /> : <Sun />}

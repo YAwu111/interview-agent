@@ -1,6 +1,14 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_WEAK_JWT_SECRETS = {
+    "dev-secret-change-me",
+    "dev-secret-change-me-please-32bytes",
+    "changeme",
+    "secret",
+}
 
 
 class Settings(BaseSettings):
@@ -9,7 +17,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://interview:interview@localhost:5432/interview"
     redis_url: str = "redis://localhost:6379/0"
 
-    jwt_secret: str = "dev-secret-change-me-please-32bytes"  # HS256 要求 ≥32 字节，生产必须覆盖
+    jwt_secret: str  # 必填：缺失即启动失败，杜绝硬编码默认值
     jwt_algorithm: str = "HS256"
     jwt_expire_access_minutes: int = 30
     jwt_expire_refresh_days: int = 7
@@ -29,7 +37,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_api_key: str = ""
     llm_model_fast: str = "deepseek-chat"
-    llm_model_strong: str = ""  # V4 级 model id，实施时填入
+    llm_model_strong: str = "deepseek-v4-pro"
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
     langsmith_project: str = "interview-agent"
@@ -42,6 +50,13 @@ class Settings(BaseSettings):
     round_limit: int = 10
     probe_max_per_weakness: int = 2
     llm_call_budget: int = 60
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _check_jwt_secret(cls, value: str) -> str:
+        if len(value) < 32 or value in _WEAK_JWT_SECRETS:
+            raise ValueError("JWT_SECRET 必须 ≥32 字节，且不能使用公开的默认弱值")
+        return value
 
 
 @lru_cache

@@ -64,7 +64,7 @@ class PgVectorStore:
     async def search_sparse(self, query: str, top_k: int = 20) -> list[dict[str, Any]]:
         import jieba  # 懒加载
 
-        q = func.to_tsvector("simple", " ".join(jieba.lcut(query)))
+        q = func.plainto_tsquery("simple", " ".join(jieba.lcut(query)))
         rank = func.ts_rank_cd(Chunk.tsv, q)
         async with self._sessionmaker() as s:
             rows = (
