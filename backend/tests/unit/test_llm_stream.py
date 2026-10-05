@@ -5,7 +5,7 @@ import json
 
 import httpx
 
-from app.orchestration.llm.client import DeepSeekClient, parse_usage, sse_delta_and_usage
+from app.core.llm import DeepSeekClient, parse_usage, sse_delta_and_usage
 
 
 def test_parse_usage_defaults() -> None:
