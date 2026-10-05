@@ -25,6 +25,8 @@ class InterviewRunner:
         self._usage_sink = usage_sink
         self._db_url = db_url
         self._graph = None
+        self._checkpointer = None
+        self._saver_ctx = None
 
     async def _ensure_deps(self) -> InterviewDeps:
         if self._deps is None:
@@ -38,15 +40,34 @@ class InterviewRunner:
             if self._db_url:
                 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-                saver = AsyncPostgresSaver.from_conn_string(self._db_url)
+                ctx = AsyncPostgresSaver.from_conn_string(self._db_url)
+                saver = await ctx.__aenter__()
                 await saver.setup()
+                self._saver_ctx = ctx
             else:
                 saver = InMemorySaver()
+            self._checkpointer = saver
             self._graph = build_graph(deps, saver)
         return self._graph
 
     def _config(self, session_id: str) -> dict:
         return {"configurable": {"thread_id": session_id}}
+
+    async def aclose(self) -> None:
+        """关闭 checkpointer 与 llm 底层连接；fake deps / InMemorySaver 无 close 时安全跳过。"""
+        checkpointer = self._checkpointer
+        if checkpointer is not None:
+            close = getattr(checkpointer, "aclose", None)
+            if close is not None:
+                await close()
+        ctx = self._saver_ctx
+        if ctx is not None:
+            await ctx.__aexit__(None, None, None)
+        deps = self._deps
+        if deps is not None and deps.llm is not None:
+            llm_close = getattr(deps.llm, "aclose", None)
+            if llm_close is not None:
+                await llm_close()
 
     async def stream(
         self,
@@ -119,7 +140,7 @@ class InterviewRunner:
             return True
         if state.get("llm_calls", 0) >= self._deps.llm_call_budget:
             return True
-        if not state.get("needs_probe") and state.get("round_index", 0) >= 1:
+        if not state.get("needs_probe") and state.get("round_index", 0) >= 2:
             return True
         return False
 

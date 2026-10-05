@@ -171,3 +171,46 @@ def test_runner_opening_then_answer_persists_abilities() -> None:
         assert (st.values or {}).get("round_index", 0) >= 1
 
     asyncio.run(run())
+
+
+def test_should_finalize_requires_two_rounds() -> None:
+    runner = InterviewRunner(deps=_deps())
+
+    def fin(needs_probe: bool, round_index: int, llm_calls: int) -> bool:
+        return runner._should_finalize(
+            {"needs_probe": needs_probe, "round_index": round_index, "llm_calls": llm_calls}
+        )
+
+    assert fin(False, 0, 1) is False
+    assert fin(False, 1, 10) is False
+    assert fin(False, 2, 10) is True
+    assert fin(True, 5, 10) is False
+    assert fin(True, 0, 60) is True
+    assert fin(True, 10, 1) is True
+
+
+class _Closable:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def test_runner_aclose_closes_checkpointer_and_llm() -> None:
+    async def run() -> None:
+        checkpointer = _Closable()
+        llm = _Closable()
+        deps = _deps()
+        deps.llm = llm
+        runner = InterviewRunner(deps=deps)
+        runner._checkpointer = checkpointer
+        await runner.aclose()
+        assert checkpointer.closed and llm.closed
+
+        # fake deps（无 aclose）应安全跳过，不抛错
+        runner2 = InterviewRunner(deps=_deps())
+        runner2._checkpointer = _Closable()
+        await runner2.aclose()
+
+    asyncio.run(run())

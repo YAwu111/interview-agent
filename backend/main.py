@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.redis = build_redis()
     app.state.interview_runner = build_interview_runner(app.state.sessionmaker)
     yield
+    await app.state.interview_runner.aclose()
     await app.state.redis.aclose()
     await engine.dispose()
 
