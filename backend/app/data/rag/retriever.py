@@ -55,9 +55,7 @@ class HybridRetriever:
 
         if self.reranker and len(hits) > 1:
             # CrossEncoder.predict 是阻塞 CPU 调用，丢线程池避免冻结事件循环
-            order = await asyncio.to_thread(
-                self.reranker.rerank, query, [h["text"] for h in hits]
-            )
+            order = await asyncio.to_thread(self.reranker.rerank, query, [h["text"] for h in hits])
             hits = [hits[i] for i, _ in order[:limit]]
         else:
             hits = hits[:limit]

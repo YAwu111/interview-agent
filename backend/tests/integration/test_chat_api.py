@@ -109,7 +109,7 @@ def test_delete_session_with_report_no_500(client: TestClient) -> None:
 
 
 def test_delete_session_other_user_data_preserved() -> None:
-    """回归：user_id 过滤——A 不能借删除操作清掉 B 会话下的报告/消息（路由校验被绕过时的仓储层兜底）。"""
+    """回归：user_id 过滤——A 不能借删除操作清掉 B 会话数据。"""
     import asyncio
 
     async def scenario() -> None:

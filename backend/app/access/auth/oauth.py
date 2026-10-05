@@ -173,8 +173,11 @@ async def callback(
         user = await repository.get_user_by_email(session, puser.email)
         if user is None:
             user = await repository.create_user(
-                session, email=puser.email, name=puser.name or puser.email.split("@")[0],
-                password_hash=None, avatar=puser.avatar,
+                session,
+                email=puser.email,
+                name=puser.name or puser.email.split("@")[0],
+                password_hash=None,
+                avatar=puser.avatar,
             )
         await repository.link_oauth_account(
             session, user_id=user.id, provider=provider, provider_user_id=puser.provider_user_id

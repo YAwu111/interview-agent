@@ -85,9 +85,7 @@ async def create_message(
     sources: list[dict] | None = None,
     status: str = "done",
 ) -> Message:
-    row = Message(
-        session_id=session_id, role=role, content=content, sources=sources, status=status
-    )
+    row = Message(session_id=session_id, role=role, content=content, sources=sources, status=status)
     session.add(row)
     await session.flush()
     return row
@@ -100,7 +98,5 @@ async def touch_session(
     if title is not None:
         values["title"] = title
     await session.execute(
-        update(Session)
-        .where(Session.id == session_id, Session.user_id == user_id)
-        .values(**values)
+        update(Session).where(Session.id == session_id, Session.user_id == user_id).values(**values)
     )
