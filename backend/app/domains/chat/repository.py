@@ -106,6 +106,16 @@ async def update_message(
     )
 
 
+async def fail_stale_streaming(session: AsyncSession, older_than: datetime) -> int:
+    """启动清理：把超过阈值的 streaming 占位消息标记为 error。"""
+    result = await session.execute(
+        update(Message)
+        .where(Message.status == "streaming", Message.created_at < older_than)
+        .values(status="error")
+    )
+    return result.rowcount
+
+
 async def touch_session(
     session: AsyncSession, session_id: str, user_id: str, title: str | None = None
 ) -> None:

@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 
 from fastapi import FastAPI
 
@@ -10,10 +11,13 @@ from app.access.gateway.middleware import (
     add_middleware,
 )
 from app.access.gateway.router import api_router
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, get_logger
 from app.data.cache.client import build_redis
 from app.data.db.engine import build_engine, build_sessionmaker
+from app.domains.chat.repository import fail_stale_streaming
 from app.orchestration.agents.interview.factory import build_interview_runner
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -25,6 +29,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.sessionmaker = build_sessionmaker(engine)
     app.state.redis = build_redis()
     app.state.interview_runner = build_interview_runner(app.state.sessionmaker)
+    try:
+        async with app.state.sessionmaker() as s:
+            older_than = datetime.now(UTC) - timedelta(minutes=10)
+            await fail_stale_streaming(s, older_than)
+            await s.commit()
+    except Exception:
+        logger.warning("startup_stale_streaming_sweep_failed", exc_info=True)
     yield
     svc = getattr(app.state, "chat_service", None)
     if svc is not None:
