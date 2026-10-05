@@ -1,4 +1,4 @@
-"""DeepSeek（OpenAI 兼容）客户端：chat / stream / tools / json_object。纯 httpx，无框架依赖。"""
+"""DeepSeek（OpenAI 兼容）客户端与模型档位。放 core：domains 与 orchestration 都能用。"""
 
 import json
 import time
@@ -6,6 +6,8 @@ from collections.abc import AsyncIterator, Iterable, Iterator
 from typing import Any
 
 import httpx
+
+from app.core.config import settings
 
 
 class LLMError(Exception):
@@ -15,7 +17,6 @@ class LLMError(Exception):
 
 
 def parse_usage(raw: dict[str, Any] | None) -> dict[str, int]:
-    """把 OpenAI 风格 usage 收敛成 {prompt_tokens, completion_tokens, total_tokens}。"""
     if not raw:
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     return {
@@ -26,7 +27,6 @@ def parse_usage(raw: dict[str, Any] | None) -> dict[str, int]:
 
 
 def sse_delta_and_usage(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
-    """纯函数：解析 SSE 的 `data:` 行，产出 {'type':'delta'|'usage', ...}。供单测。"""
     for line in lines:
         line = line.strip()
         if not line.startswith("data:"):
@@ -92,6 +92,7 @@ class DeepSeekClient:
         msg = data["choices"][0]["message"]
         return {
             "content": msg.get("content"),
+            "reasoning_content": msg.get("reasoning_content"),
             "tool_calls": msg.get("tool_calls"),
             "usage": parse_usage(data.get("usage")),
             "latency_ms": int((time.monotonic() - t0) * 1000),
@@ -111,6 +112,7 @@ class DeepSeekClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         async with self._client.stream("POST", "/chat/completions", json=payload) as res:
             if res.status_code >= 400:
@@ -119,3 +121,11 @@ class DeepSeekClient:
             async for line in res.aiter_lines():
                 for event in sse_delta_and_usage([line]):
                     yield event
+
+
+def fast_model() -> str:
+    return settings.llm_model_fast
+
+
+def strong_model() -> str:
+    return settings.llm_model_strong or settings.llm_model_fast

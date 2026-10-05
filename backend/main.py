@@ -12,6 +12,7 @@ from app.access.gateway.router import api_router
 from app.core.logging import configure_logging
 from app.data.cache.client import build_redis
 from app.data.db.engine import build_engine, build_sessionmaker
+from app.orchestration.agents.interview.factory import build_interview_runner
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.db_engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
     app.state.redis = build_redis()
+    app.state.interview_runner = build_interview_runner(app.state.sessionmaker)
     yield
     await app.state.redis.aclose()
     await engine.dispose()
