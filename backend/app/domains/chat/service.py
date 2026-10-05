@@ -292,31 +292,24 @@ class ChatService:
             yield {"type": "delta", "content": "报告已生成。"}
             yield {"type": "done"}
             return
-        parts: list[str] = []
-        report: dict | None = None
-        try:
+
+        async with self._sessionmaker() as s:
+            assistant = await repository.create_message(
+                s, sess.id, "assistant", "", status="streaming"
+            )
+            await s.commit()
+        message_id = assistant.id
+
+        async def producer() -> AsyncIterator[dict]:
             async for ev in self._runner.finalize(
                 user_id=sess.user_id, session_id=sess.id, history=history, personal_context=""
             ):
-                if ev.get("type") == "report":
-                    report = ev.get("report")
-                    continue
-                if ev.get("type") == "delta":
-                    parts.append(ev.get("content"))
-                if ev.get("type") == "done":
-                    continue
                 yield ev
-            async with self._sessionmaker() as s:
-                await repository.create_message(
-                    s, sess.id, "assistant", "".join(parts), sources=None, status="done"
-                )
-                await s.commit()
-            if report is not None:
-                await self._save_report(sess, report)
-            yield {"type": "done"}
-        except Exception:
-            logger.exception("end interview failed session=%s", sess.id)
-            yield {"type": "error", "message": "生成失败，请重试"}
+
+        task = self._start_task(self._consume_stream(sess, message_id, producer()))
+        yield {"type": "meta", "messageId": message_id}
+        async for ev in self._tail(sess.id, message_id, task):
+            yield ev
 
     async def _save_report(self, sess: Session, report: dict) -> None:
         payload = dict(
