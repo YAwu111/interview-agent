@@ -3,14 +3,14 @@
 import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.data.cache.keys import IDEMPOTENCY
 from app.data.db.models.idempotency import IdempotencyRecord
 
-INFLIGHT_TTL_SECONDS = 60
+INFLIGHT_TTL_SECONDS = 300
 COMPLETED_TTL_SECONDS = 24 * 60 * 60
 
 
@@ -88,3 +88,11 @@ class IdempotencyRepository:
 
     async def fail(self, key: str) -> None:
         await self._redis.delete(_redis_key(key))
+
+
+async def prune_expired(session: AsyncSession, older_than) -> int:
+    """清理超过保留期的幂等兜底行，避免 PG 表只进不出。"""
+    result = await session.execute(
+        delete(IdempotencyRecord).where(IdempotencyRecord.created_at < older_than)
+    )
+    return result.rowcount

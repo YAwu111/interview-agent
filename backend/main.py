@@ -14,6 +14,7 @@ from app.access.gateway.router import api_router
 from app.core.logging import configure_logging, get_logger
 from app.data.cache.client import build_redis
 from app.data.db.engine import build_engine, build_sessionmaker
+from app.data.repositories.idempotency import prune_expired
 from app.domains.chat.repository import fail_stale_streaming
 from app.orchestration.agents.interview.factory import build_interview_runner
 
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         async with app.state.sessionmaker() as s:
             older_than = datetime.now(UTC) - timedelta(minutes=10)
             await fail_stale_streaming(s, older_than)
+            await prune_expired(s, datetime.now(UTC) - timedelta(hours=24))
             await s.commit()
     except Exception:
         logger.warning("startup_stale_streaming_sweep_failed", exc_info=True)
