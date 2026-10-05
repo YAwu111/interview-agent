@@ -100,7 +100,7 @@ async def resume_stream(
 @router.post("/sessions/{session_id}/stop")
 async def stop(session_id: str, request: Request, svc=Depends(get_chat_service)):
     await _owned_session(request, session_id, svc)
-    # v1 自由对话：取消由前端 abort SSE 完成，服务端无状态可撤销
+    await svc.stop_stream(session_id)
     return {"ok": True}
 
 

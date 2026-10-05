@@ -61,12 +61,24 @@ class ChatService:
         self._retriever = None
         self._llm = None
         self._tasks: set[asyncio.Task] = set()
+        self._stream_tasks: dict[str, tuple[str, asyncio.Task]] = {}
 
     def _start_task(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return task
+
+    def _start_stream_task(self, session_id: str, message_id: str, coro) -> asyncio.Task:
+        task = self._start_task(coro)
+        self._stream_tasks[message_id] = (session_id, task)
+        task.add_done_callback(lambda _t: self._stream_tasks.pop(message_id, None))
+        return task
+
+    async def stop_stream(self, session_id: str) -> None:
+        for message_id, (sid, task) in list(self._stream_tasks.items()):
+            if sid == session_id:
+                task.cancel()
 
     async def aclose(self) -> None:
         for task in list(self._tasks):
@@ -148,7 +160,8 @@ class ChatService:
         message_id = assistant.id
 
         producer = self._produce(sess, text, history)
-        task = self._start_task(self._consume_stream(sess, message_id, producer))
+        consumer = self._consume_stream(sess, message_id, producer)
+        task = self._start_stream_task(sess.id, message_id, consumer)
         yield {"type": "meta", "messageId": message_id}
         async for ev in self._tail(sess.id, message_id, task):
             yield ev
@@ -233,6 +246,15 @@ class ChatService:
             if report is not None:
                 await self._save_report(sess, report)
             await sse.set_meta(self._redis, sess.id, message_id, "done", seq)
+        except asyncio.CancelledError:
+            logger.info("stream cancelled session=%s", sess.id)
+            async with self._sessionmaker() as s:
+                await repository.update_message(
+                    s, message_id, content="".join(parts), sources=sources, status="error"
+                )
+                await s.commit()
+            await sse.set_meta(self._redis, sess.id, message_id, "failed", seq)
+            raise
         except Exception:
             logger.exception("stream failed session=%s", sess.id)
             seq += 1
@@ -306,7 +328,8 @@ class ChatService:
             ):
                 yield ev
 
-        task = self._start_task(self._consume_stream(sess, message_id, producer()))
+        consumer = self._consume_stream(sess, message_id, producer())
+        task = self._start_stream_task(sess.id, message_id, consumer)
         yield {"type": "meta", "messageId": message_id}
         async for ev in self._tail(sess.id, message_id, task):
             yield ev
