@@ -46,3 +46,15 @@ app.include_router(api_router)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    # Windows 下 uvicorn 默认 ProactorEventLoop，psycopg 异步不支持，改用 Selector
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        loop="app.core.loop:selector_loop_factory",
+    )
