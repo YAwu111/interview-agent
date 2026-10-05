@@ -75,6 +75,12 @@ export interface ChatApi {
   deleteSession(id: string): Promise<void>
   getMessages(sessionId: string): Promise<ChatMessage[]>
   streamChat(sessionId: string, text: string, opts: StreamOptions): AsyncIterable<SSEChunk>
+  resumeChat(
+    sessionId: string,
+    messageId: string,
+    lastEventId: number,
+    opts: StreamOptions,
+  ): AsyncIterable<SSEChunk>
   /** 结束面试：触发报告生成，SSE 流式返回报告 markdown */
   end(sessionId: string, opts: StreamOptions): AsyncIterable<SSEChunk>
   stop(sessionId: string): Promise<void>

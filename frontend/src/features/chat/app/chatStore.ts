@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ChatMessage, ChatMode, ChatSession, SourceItem } from '@/shared/services/types'
 import { chatApi } from '../services/chatApi'
+import { readSseCursor } from '../services/sseClient'
 import { t } from '@/shared/lib/locale/zh'
 import { invalidateCache } from '@/shared/services/resilience'
 
@@ -76,6 +77,58 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         error: null,
         ...(target ? { pendingMode: target.mode } : {}),
       })
+      const streaming = messages.find((m) => m.role === 'assistant' && m.status === 'streaming')
+      if (streaming) {
+        void (async () => {
+          const controller = new AbortController()
+          abortController = controller
+          set({ isStreaming: true, status: null })
+          const lastEventId = readSseCursor(id, streaming.id)
+          try {
+            for await (const chunk of chatApi.resumeChat(id, streaming.id, lastEventId, {
+              signal: controller.signal,
+            })) {
+              if (chunk.type === 'delta') get().appendDelta(streaming.id, chunk.content)
+              else if (chunk.type === 'status') set({ status: chunk.stage })
+              else if (chunk.type === 'sources') {
+                set((st) => ({
+                  messages: st.messages.map((m) =>
+                    m.id === streaming.id ? { ...m, sources: chunk.items } : m,
+                  ),
+                }))
+              } else if (chunk.type === 'error') {
+                set((st) => ({
+                  error: chunk.message,
+                  messages: st.messages.map((m) =>
+                    m.id === streaming.id ? { ...m, status: 'error' } : m,
+                  ),
+                }))
+              }
+            }
+          } catch (e) {
+            if (!controller.signal.aborted) {
+              set((st) => ({
+                error: errText(e),
+                messages: st.messages.map((m) =>
+                  m.id === streaming.id ? { ...m, status: 'error' } : m,
+                ),
+              }))
+            }
+          } finally {
+            abortController = null
+            invalidateCache(`GET:/chat/sessions/${id}/messages`)
+            set((st) => ({
+              isStreaming: false,
+              status: null,
+              messages: st.messages.map((m) =>
+                m.id === streaming.id && m.status === 'streaming'
+                  ? { ...m, status: 'done' }
+                  : m,
+              ),
+            }))
+          }
+        })()
+      }
     } catch (e) {
       if (reqId === selectSeq) set({ error: errText(e) })
     }

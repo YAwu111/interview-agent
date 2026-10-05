@@ -3,7 +3,7 @@ import { API_MODE } from '@/shared/lib/constants'
 import { apiDelete, apiPatch, apiPost } from '@/shared/services/apiClient'
 import { idempotentWrite, invalidateCache, resilientGet } from '@/shared/services/resilience'
 import { mockChat } from '@/shared/services/mockAdapter'
-import { sseChatStream, sseEndSession } from './sseClient'
+import { sseChatStream, sseEndSession, sseResumeSession } from './sseClient'
 
 const live: ChatApi = {
   listSessions: () => resilientGet<ChatSession[]>('/chat/sessions', undefined, { dedupe: true }),
@@ -38,6 +38,8 @@ const live: ChatApi = {
   getMessages: (sessionId) =>
     resilientGet<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`, undefined, { dedupe: true }),
   streamChat: (sessionId, text, { signal }) => sseChatStream(sessionId, text, signal),
+  resumeChat: (sessionId, messageId, lastEventId, { signal }) =>
+    sseResumeSession(sessionId, messageId, lastEventId, signal),
   end: (sessionId, { signal }) => sseEndSession(sessionId, signal),
   stop: (sessionId) => apiPost<void>(`/chat/sessions/${sessionId}/stop`),
 }

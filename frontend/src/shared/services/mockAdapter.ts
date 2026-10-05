@@ -216,6 +216,9 @@ export const mockChat: ChatApi = {
     return [...(messagesBySession[sessionId] ?? [])]
   },
   streamChat: mockStream,
+  async *resumeChat(_sessionId, _messageId, _lastEventId, { signal }) {
+    if (!signal.aborted) yield { type: 'done' }
+  },
   async *end(_sessionId, { signal }) {
     const report =
       '# 面试报告（综合评分 4/5）\n\n## 各维度\n- technical：4/5 — 技术功底扎实\n- depth：3/5 — 可以更深入\n\n## 待改进\n- 表达可以更结构化'

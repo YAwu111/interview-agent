@@ -14,6 +14,13 @@ function persistCursor(sessionId: string, messageId: string, lastEventId: number
   }
 }
 
+export function readSseCursor(sessionId: string, messageId: string): number {
+  if (typeof sessionStorage === 'undefined') return 0
+  const raw = sessionStorage.getItem(`sse:${sessionId}:${messageId}`)
+  const value = raw === null ? 0 : Number(raw)
+  return Number.isFinite(value) ? value : 0
+}
+
 async function httpPost(
   path: string,
   body: unknown,
@@ -138,4 +145,27 @@ export async function* sseEndSession(
   signal: AbortSignal,
 ): AsyncIterable<SSEChunk> {
   yield* runResumable(`/chat/sessions/${sessionId}/end`, {}, sessionId, signal)
+}
+
+export async function* sseResumeSession(
+  sessionId: string,
+  messageId: string,
+  lastEventId: number,
+  signal: AbortSignal,
+): AsyncIterable<SSEChunk> {
+  const res = await httpResume(sessionId, messageId, lastEventId, signal)
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  const parser = createSSEParser()
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) yield chunk
+      if (signal.aborted) return
+    }
+    for (const chunk of parser.flush()) yield chunk
+  } finally {
+    reader.cancel().catch(() => {})
+  }
 }
