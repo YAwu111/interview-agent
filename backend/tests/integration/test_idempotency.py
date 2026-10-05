@@ -33,6 +33,17 @@ def test_idempotency_replay_conflict_and_inflight(client: TestClient) -> None:
     assert replay.status_code == 200
     assert replay.json()["id"] == first_id
 
+    # 清掉 Redis 缓存后应回落到 PG 兜底，仍能命中同 key 结果
+    async def drop_redis_key() -> None:
+        r = make_redis()
+        await r.delete("idem:key-same")
+        await r.aclose()
+
+    asyncio.run(drop_redis_key())
+    pg_replay = client.post("/api/v1/chat/sessions", json={"mode": "chat"}, headers=headers)
+    assert pg_replay.status_code == 200
+    assert pg_replay.json()["id"] == first_id
+
     conflict = client.post(
         "/api/v1/chat/sessions", json={"mode": "interview"}, headers=headers
     )

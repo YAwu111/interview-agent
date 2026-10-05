@@ -7,10 +7,12 @@ import {
   invalidateCache,
   isRetriable,
   backoffDelay,
+  idempotentWrite,
 } from './resilience/index.ts'
 import { withRetry } from './resilience/retry.ts'
 import { getCache } from './resilience/cache.ts'
 import { withDedupe } from './resilience/dedupe.ts'
+import { defaultStorage } from './offlineQueue.ts'
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void
 
@@ -158,4 +160,47 @@ test('resilientGet：503 走重试，最终成功', async () => {
       assert.equal(hits, 2)
     },
   )
+})
+
+test('idempotentWrite：成功传递 key，弱网失败入队并抛排队错误', async () => {
+  await defaultStorage.clear()
+  let seenKey: string | null = null
+  const ok = await idempotentWrite(
+    async (key) => {
+      seenKey = key
+      return 'ok'
+    },
+    { method: 'POST', path: '/api/v1/x', body: { a: 1 } },
+  )
+  assert.equal(ok, 'ok')
+  assert.ok(seenKey)
+  assert.equal((await defaultStorage.list()).length, 0)
+
+  await assert.rejects(
+    idempotentWrite(
+      async () => {
+        throw new ApiError(0, '网络错误')
+      },
+      { method: 'DELETE', path: '/api/v1/y' },
+    ),
+    /已排队/,
+  )
+  const items = await defaultStorage.list()
+  assert.equal(items.length, 1)
+  assert.equal(items[0].path, '/api/v1/y')
+  assert.equal(items[0].method, 'DELETE')
+})
+
+test('idempotentWrite：非可重试错误不入队并原样抛出', async () => {
+  await defaultStorage.clear()
+  await assert.rejects(
+    idempotentWrite(
+      async () => {
+        throw new ApiError(400, '参数错')
+      },
+      { method: 'PATCH', path: '/api/v1/z', body: {} },
+    ),
+    (err: unknown) => err instanceof ApiError && err.message === '参数错',
+  )
+  assert.equal((await defaultStorage.list()).length, 0)
 })
