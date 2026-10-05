@@ -9,6 +9,8 @@ interface ChatState {
   /** 当前会话的消息 */
   messages: ChatMessage[]
   isStreaming: boolean
+  /** 当前阶段（后端 status 事件驱动）：retrieving/answering/probing/finalizing */
+  status: string | null
   error: string | null
   /** 无会话或空会话时，输入区选择的模式 */
   pendingMode: ChatMode
@@ -28,6 +30,7 @@ let seq = 0
 const localId = () => `local-${++seq}`
 let abortController: AbortController | null = null
 let selectSeq = 0
+let suppressAutoOpen = false
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : t.chat.streamError)
 
@@ -36,6 +39,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   activeSessionId: null,
   messages: [],
   isStreaming: false,
+  status: null,
   error: null,
   pendingMode: 'chat',
 
@@ -53,6 +57,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   createSession: async (mode) => {
     const s = await chatApi.createSession(mode)
     set((st) => ({ sessions: [s, ...st.sessions], activeSessionId: s.id, messages: [], error: null }))
+    if (mode === 'interview' && !suppressAutoOpen) void get().sendMessage('开始面试')
     return s
   },
 
@@ -100,6 +105,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         sessions: sessions.map((s) => (s.id === activeSessionId ? { ...s, mode } : s)),
       })
       void chatApi.updateSession(activeSessionId, { mode })
+      if (mode === 'interview') void get().sendMessage('开始面试')
     }
   },
 
@@ -109,11 +115,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     let sessionId = get().activeSessionId
     if (!sessionId) {
+      suppressAutoOpen = true
       try {
         sessionId = (await get().createSession(get().pendingMode)).id
       } catch (e) {
         set({ error: errText(e) })
         return
+      } finally {
+        suppressAutoOpen = false
       }
     }
 
@@ -159,6 +168,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
               m.id === assistantMsg.id ? { ...m, sources: chunk.items } : m,
             ),
           }))
+        } else if (chunk.type === 'status') {
+          set({ status: chunk.stage })
         } else if (chunk.type === 'error') {
           set((st) => ({
             error: chunk.message,
@@ -181,6 +192,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       abortController = null
       set((st) => ({
         isStreaming: false,
+        status: null,
         messages: st.messages.map((m) =>
           m.id === assistantMsg.id && m.status === 'streaming' ? { ...m, status: 'done' } : m,
         ),
@@ -204,15 +216,59 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   resetError: () => set({ error: null }),
 
   endInterview: () => {
-    const { activeSessionId } = get()
-    if (!activeSessionId) return
-    set((st) => ({
-      sessions: st.sessions.map((s) =>
-        s.id === activeSessionId ? { ...s, mode: 'chat' as ChatMode } : s,
-      ),
-      pendingMode: 'chat',
-    }))
-    void chatApi.updateSession(activeSessionId, { mode: 'chat' })
+    const { activeSessionId, isStreaming } = get()
+    if (!activeSessionId || isStreaming) return
+    const now = Date.now()
+    const reportMsg: ChatMessage = {
+      id: localId(),
+      sessionId: activeSessionId,
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      createdAt: now,
+    }
+    set((st) => ({ messages: [...st.messages, reportMsg], isStreaming: true, error: null }))
+    const controller = new AbortController()
+    abortController = controller
+    void (async () => {
+      try {
+        const stream = chatApi.end(activeSessionId, { signal: controller.signal })
+        for await (const chunk of stream) {
+          if (chunk.type === 'delta') get().appendDelta(reportMsg.id, chunk.content)
+          else if (chunk.type === 'status') set({ status: chunk.stage })
+          else if (chunk.type === 'error') {
+            set((st) => ({
+              error: chunk.message,
+              messages: st.messages.map((m) =>
+                m.id === reportMsg.id ? { ...m, status: 'error' } : m,
+              ),
+            }))
+          }
+        }
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          set((st) => ({
+            error: errText(e),
+            messages: st.messages.map((m) =>
+              m.id === reportMsg.id ? { ...m, status: 'error' } : m,
+            ),
+          }))
+        }
+      } finally {
+        abortController = null
+        set((st) => ({
+          isStreaming: false,
+          status: null,
+          messages: st.messages.map((m) =>
+            m.id === reportMsg.id && m.status === 'streaming' ? { ...m, status: 'done' } : m,
+          ),
+          sessions: st.sessions.map((s) =>
+            s.id === activeSessionId ? { ...s, mode: 'chat' as ChatMode } : s,
+          ),
+          pendingMode: 'chat',
+        }))
+      }
+    })()
   },
 }))
 

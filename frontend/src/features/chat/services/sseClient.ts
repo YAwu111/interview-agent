@@ -45,3 +45,25 @@ export async function* sseChatStream(
     reader.cancel().catch(() => {})
   }
 }
+
+/** 结束面试：SSE 流式返回报告（无请求体）。 */
+export async function* sseEndSession(
+  sessionId: string,
+  signal: AbortSignal,
+): AsyncIterable<SSEChunk> {
+  const res = await httpStream(`/chat/sessions/${sessionId}/end`, {}, signal)
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  const parser = createSSEParser()
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) yield chunk
+      if (signal.aborted) return
+    }
+    for (const chunk of parser.flush()) yield chunk
+  } finally {
+    reader.cancel().catch(() => {})
+  }
+}

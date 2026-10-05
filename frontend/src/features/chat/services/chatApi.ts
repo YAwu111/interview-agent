@@ -2,7 +2,7 @@ import type { ChatApi, ChatMessage, ChatSession } from '@/shared/services/types'
 import { API_MODE } from '@/shared/lib/constants'
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/shared/services/apiClient'
 import { mockChat } from '@/shared/services/mockAdapter'
-import { sseChatStream } from './sseClient'
+import { sseChatStream, sseEndSession } from './sseClient'
 
 const live: ChatApi = {
   listSessions: () => apiGet<ChatSession[]>('/chat/sessions'),
@@ -11,6 +11,7 @@ const live: ChatApi = {
   deleteSession: (id) => apiDelete(`/chat/sessions/${id}`),
   getMessages: (sessionId) => apiGet<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`),
   streamChat: (sessionId, text, { signal }) => sseChatStream(sessionId, text, signal),
+  end: (sessionId, { signal }) => sseEndSession(sessionId, signal),
   stop: (sessionId) => apiPost<void>(`/chat/sessions/${sessionId}/stop`),
 }
 

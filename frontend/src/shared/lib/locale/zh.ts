@@ -31,6 +31,10 @@ export const t = {
     emptyTitle: '开始新的对话',
     emptyHint: '自由对话解答求职疑问，或切换到模拟面试进行实战演练。',
     streamError: '生成出错，请重试',
+    statusRetrieving: '正在检索知识库…',
+    statusAnswering: '正在生成回答…',
+    statusProbing: '正在生成追问…',
+    statusFinalizing: '正在生成报告…',
   },
   knowledge: {
     title: '知识库',

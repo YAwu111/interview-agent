@@ -216,6 +216,16 @@ export const mockChat: ChatApi = {
     return [...(messagesBySession[sessionId] ?? [])]
   },
   streamChat: mockStream,
+  async *end(_sessionId, { signal }) {
+    const report =
+      '# 面试报告（综合评分 4/5）\n\n## 各维度\n- technical：4/5 — 技术功底扎实\n- depth：3/5 — 可以更深入\n\n## 待改进\n- 表达可以更结构化'
+    for (const ch of report.match(/.{1,4}/gsu) ?? []) {
+      if (signal.aborted) return
+      await latency(20)
+      yield { type: 'delta', content: ch }
+    }
+    yield { type: 'done' }
+  },
   async stop() {
     /* mock 由 AbortSignal 中断，无需服务端动作 */
   },

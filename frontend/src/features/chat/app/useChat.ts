@@ -5,6 +5,7 @@ export function useChat() {
   const activeSessionId = useChatStore((s) => s.activeSessionId)
   const messages = useChatStore((s) => s.messages)
   const isStreaming = useChatStore((s) => s.isStreaming)
+  const status = useChatStore((s) => s.status)
   const error = useChatStore((s) => s.error)
   const pendingMode = useChatStore((s) => s.pendingMode)
   const loadSessions = useChatStore((s) => s.loadSessions)
@@ -23,6 +24,7 @@ export function useChat() {
     activeSession,
     messages,
     isStreaming,
+    status,
     error,
     pendingMode,
     loadSessions,
