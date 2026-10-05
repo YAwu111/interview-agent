@@ -62,6 +62,7 @@ class ChatService:
         self._llm = None
         self._tasks: set[asyncio.Task] = set()
         self._stream_tasks: dict[str, tuple[str, asyncio.Task]] = {}
+        self._session_locks: dict[str, asyncio.Lock] = {}
 
     def _start_task(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -79,6 +80,13 @@ class ChatService:
         for message_id, (sid, task) in list(self._stream_tasks.items()):
             if sid == session_id:
                 task.cancel()
+
+    def _lock_for(self, session_id: str) -> asyncio.Lock:
+        lock = self._session_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._session_locks[session_id] = lock
+        return lock
 
     async def aclose(self) -> None:
         for task in list(self._tasks):
@@ -138,33 +146,38 @@ class ChatService:
             return [_to_message(r) for r in rows]
 
     async def stream(self, sess: Session, text: str) -> AsyncIterator[dict]:
-        async with self._sessionmaker() as s:
-            prior = await repository.list_messages(s, sess.id)
-            history = [{"role": m.role, "content": m.content} for m in prior]
-            first = len(prior) == 0
-            await repository.create_message(s, sess.id, "user", text)
-            await repository.touch_session(
-                s, sess.id, sess.user_id, title=text[:20] if first else None
-            )
-            await s.commit()
-
-        if sess.mode == "interview" and self._runner is None:
-            yield {"type": "error", "message": "面试服务未就绪"}
+        lock = self._lock_for(sess.id)
+        if lock.locked():
+            yield {"type": "error", "message": "已有进行中的回答"}
             return
+        async with lock:
+            async with self._sessionmaker() as s:
+                prior = await repository.list_messages(s, sess.id)
+                history = [{"role": m.role, "content": m.content} for m in prior]
+                first = len(prior) == 0
+                await repository.create_message(s, sess.id, "user", text)
+                await repository.touch_session(
+                    s, sess.id, sess.user_id, title=text[:20] if first else None
+                )
+                await s.commit()
 
-        async with self._sessionmaker() as s:
-            assistant = await repository.create_message(
-                s, sess.id, "assistant", "", status="streaming"
-            )
-            await s.commit()
-        message_id = assistant.id
+            if sess.mode == "interview" and self._runner is None:
+                yield {"type": "error", "message": "面试服务未就绪"}
+                return
 
-        producer = self._produce(sess, text, history)
-        consumer = self._consume_stream(sess, message_id, producer)
-        task = self._start_stream_task(sess.id, message_id, consumer)
-        yield {"type": "meta", "messageId": message_id}
-        async for ev in self._tail(sess.id, message_id, task):
-            yield ev
+            async with self._sessionmaker() as s:
+                assistant = await repository.create_message(
+                    s, sess.id, "assistant", "", status="streaming"
+                )
+                await s.commit()
+            message_id = assistant.id
+
+            producer = self._produce(sess, text, history)
+            consumer = self._consume_stream(sess, message_id, producer)
+            task = self._start_stream_task(sess.id, message_id, consumer)
+            yield {"type": "meta", "messageId": message_id}
+            async for ev in self._tail(sess.id, message_id, task):
+                yield ev
 
     async def resume(
         self, sess: Session, message_id: str, last_event_id: int
