@@ -4,9 +4,11 @@ import { getAuthToken, handleUnauthorized, refreshAccessToken } from './authBrid
 /** 归一后的 API 错误：message 取自 FastAPI 的 {detail} */
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  retryAfterMs?: number
+  constructor(status: number, message: string, retryAfterMs?: number) {
     super(message)
     this.status = status
+    this.retryAfterMs = retryAfterMs
   }
 }
 
@@ -24,9 +26,19 @@ const toApiError = (err: unknown): ApiError => {
             : status
               ? `请求失败 (${status})`
               : '网络错误'
-    return new ApiError(status, message)
+    return new ApiError(status, message, parseRetryAfter(err))
   }
   return new ApiError(0, err instanceof Error ? err.message : '未知错误')
+}
+
+function parseRetryAfter(err: AxiosError): number | undefined {
+  const raw = err.response?.headers?.['retry-after']
+  if (!raw) return undefined
+  const seconds = Number(raw)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000)
+  const date = Date.parse(raw)
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now())
+  return undefined
 }
 
 /** 401 时自动刷新并重试一次的标记；/auth/token 等刷新请求自身必须带上防循环 */
