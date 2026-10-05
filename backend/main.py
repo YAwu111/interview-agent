@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.access.gateway.idempotency import IdempotencyMiddleware
 from app.access.gateway.middleware import (
     RequestIDMiddleware,
     add_exception_handlers,
@@ -34,6 +35,7 @@ app = FastAPI(title="interview-agent", lifespan=lifespan)
 
 add_middleware(app)
 add_exception_handlers(app)
+app.add_middleware(IdempotencyMiddleware, state=app.state)
 app.add_middleware(RequestIDMiddleware)
 app.include_router(api_router)
 

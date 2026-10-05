@@ -3,6 +3,7 @@
 from .auth import OAuthAccount, RefreshToken, User
 from .base import Base
 from .chat import Message, Session
+from .idempotency import IdempotencyRecord
 from .knowledge import Chunk, Document, KnowledgeBase
 from .report import InterviewReport
 from .resources import Resource
@@ -14,6 +15,7 @@ __all__ = [
     "User",
     "Message",
     "Session",
+    "IdempotencyRecord",
     "Chunk",
     "Document",
     "KnowledgeBase",
