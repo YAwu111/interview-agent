@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { ChatMessage, ChatMode, ChatSession, SourceItem } from '@/shared/services/types'
 import { chatApi } from '../services/chatApi'
 import { t } from '@/shared/lib/locale/zh'
+import { invalidateCache } from '@/shared/services/resilience'
 
 interface ChatState {
   sessions: ChatSession[]
@@ -190,6 +191,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }
     } finally {
       abortController = null
+      invalidateCache(`GET:/chat/sessions/${sessionId}/messages`)
       set((st) => ({
         isStreaming: false,
         status: null,
@@ -256,6 +258,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }
       } finally {
         abortController = null
+        invalidateCache(`GET:/chat/sessions/${activeSessionId}/messages`)
         set((st) => ({
           isStreaming: false,
           status: null,
