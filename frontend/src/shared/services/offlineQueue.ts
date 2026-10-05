@@ -73,6 +73,9 @@ export const indexedDbStorage: QueueStorage = {
   clear: () => withStore('readwrite', (s) => s.clear()).then(() => undefined),
 }
 
+export const defaultStorage: QueueStorage =
+  typeof indexedDB !== 'undefined' ? indexedDbStorage : memoryStorage()
+
 const RETRIABLE = new Set([408, 429, 502, 503, 504])
 
 function sleep(ms: number): Promise<void> {
@@ -149,4 +152,8 @@ export function installOfflineQueue(opts: {
     window.addEventListener('online', () => void flush())
   }
   return { flush }
+}
+
+export function enqueueWrite(item: QueueItem): Promise<void> {
+  return defaultStorage.put(item)
 }

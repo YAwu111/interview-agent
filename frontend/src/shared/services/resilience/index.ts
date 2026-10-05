@@ -1,8 +1,9 @@
 import type { AxiosRequestConfig } from 'axios'
-import { apiGet } from '../apiClient.ts'
+import { apiGet, ApiError } from '../apiClient.ts'
+import { enqueueWrite, type QueueItem } from '../offlineQueue.ts'
 import { getCache } from './cache.ts'
 import { withDedupe } from './dedupe.ts'
-import { withRetry, type RetryPolicy } from './retry.ts'
+import { isRetriable, withRetry, type RetryPolicy } from './retry.ts'
 
 export type CachePolicy = { ttlMs?: number; staleWhileRevalidate?: boolean }
 
@@ -59,3 +60,19 @@ export function resilientGet<T>(
 }
 
 export { isRetriable, backoffDelay, type RetryPolicy } from './retry.ts'
+
+export async function idempotentWrite<T>(
+  run: (key: string) => Promise<T>,
+  descriptor: Omit<QueueItem, 'id' | 'key' | 'createdAt'>,
+): Promise<T> {
+  const key = globalThis.crypto.randomUUID()
+  try {
+    return await run(key)
+  } catch (err) {
+    if (isRetriable(err)) {
+      await enqueueWrite({ ...descriptor, id: key, key, createdAt: Date.now() })
+      throw new ApiError(0, '网络异常，操作已排队，联网后自动重试')
+    }
+    throw err
+  }
+}
