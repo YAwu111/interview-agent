@@ -55,12 +55,14 @@ export interface ChatMessage {
   createdAt: number
 }
 
-export type SSEChunk =
+export type SSEChunk = (
   | { type: 'delta'; content: string }
   | { type: 'sources'; items: SourceItem[] }
   | { type: 'status'; stage: string; round?: number }
+  | { type: 'meta'; messageId: string }
   | { type: 'done' }
   | { type: 'error'; message: string }
+) & { eventId?: number }
 
 export interface StreamOptions {
   signal: AbortSignal

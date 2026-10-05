@@ -149,7 +149,7 @@ class ChatService:
 
         producer = self._produce(sess, text, history)
         task = self._start_task(self._consume_stream(sess, message_id, producer))
-        yield {"type": "meta", "message_id": message_id}
+        yield {"type": "meta", "messageId": message_id}
         async for ev in self._tail(sess.id, message_id, task):
             yield ev
 
@@ -160,7 +160,7 @@ class ChatService:
         if meta is None:
             yield {"type": "error", "message": "流已过期或不存在"}
             return
-        yield {"type": "meta", "message_id": message_id}
+        yield {"type": "meta", "messageId": message_id}
         async for ev in self._tail(sess.id, message_id, None, start_seq=last_event_id):
             yield ev
 
@@ -263,7 +263,7 @@ class ChatService:
             events = await sse.read_tail(self._redis, session_id, message_id, cursor)
             for ev in events:
                 payload = dict(ev["payload"])
-                payload["event_id"] = ev["seq"]
+                payload["eventId"] = ev["seq"]
                 yield payload
                 cursor = ev["seq"]
             meta = await sse.get_meta(self._redis, session_id, message_id)

@@ -3,8 +3,7 @@ import { createSSEParser } from '@/shared/services/sseParser'
 import { ApiError } from '@/shared/services/apiClient'
 import type { SSEChunk } from '@/shared/services/types'
 
-/** 聊天 SSE 流式请求：浏览器端流式走 fetch ReadableStream，token/401 与 axios 共用 authBridge */
-async function httpStream(
+async function httpPost(
   path: string,
   body: unknown,
   signal: AbortSignal,
@@ -13,9 +12,14 @@ async function httpStream(
   const headers = new Headers({ 'Content-Type': 'application/json' })
   const token = getAuthToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const res = await fetch(`/api/v1${path}`, { method: 'POST', body: JSON.stringify(body), headers, signal })
+  const res = await fetch(`/api/v1${path}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers,
+    signal,
+  })
   if (res.status === 401) {
-    if (!retried && (await refreshAccessToken())) return httpStream(path, body, signal, true)
+    if (!retried && (await refreshAccessToken())) return httpPost(path, body, signal, true)
     handleUnauthorized()
     throw new ApiError(401, '未登录或登录已过期')
   }
@@ -23,47 +27,88 @@ async function httpStream(
   return res
 }
 
-/** live 模式：把 SSE 字节流转成 AsyncIterable<SSEChunk>，支持 AbortSignal 中断 */
+async function httpResume(
+  sessionId: string,
+  messageId: string,
+  lastEventId: number,
+  signal: AbortSignal,
+  retried = false,
+): Promise<Response> {
+  const headers = new Headers({ 'Last-Event-ID': String(lastEventId) })
+  const token = getAuthToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(
+    `/api/v1/chat/sessions/${sessionId}/messages/${messageId}/stream`,
+    { method: 'GET', headers, signal },
+  )
+  if (res.status === 401) {
+    if (!retried && (await refreshAccessToken()))
+      return httpResume(sessionId, messageId, lastEventId, signal, true)
+    handleUnauthorized()
+    throw new ApiError(401, '未登录或登录已过期')
+  }
+  if (!res.ok || !res.body) throw new ApiError(res.status, `请求失败 (${res.status})`)
+  return res
+}
+
+async function* runResumable(
+  path: string,
+  body: unknown,
+  sessionId: string,
+  signal: AbortSignal,
+): AsyncIterable<SSEChunk> {
+  let messageId: string | null = null
+  let lastEventId = 0
+  let res = await httpPost(path, body, signal)
+
+  for (;;) {
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    const parser = createSSEParser()
+    let terminated = false
+    let errored = false
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) {
+          if (chunk.type === 'meta') messageId = chunk.messageId
+          if (chunk.eventId !== undefined) lastEventId = Math.max(lastEventId, chunk.eventId)
+          if (chunk.type === 'done' || chunk.type === 'error') terminated = true
+          yield chunk
+        }
+        if (signal.aborted) return
+      }
+      for (const chunk of parser.flush()) {
+        if (chunk.type === 'meta') messageId = chunk.messageId
+        if (chunk.eventId !== undefined) lastEventId = Math.max(lastEventId, chunk.eventId)
+        if (chunk.type === 'done' || chunk.type === 'error') terminated = true
+        yield chunk
+      }
+    } catch {
+      if (signal.aborted) return
+      errored = true
+    } finally {
+      reader.cancel().catch(() => {})
+    }
+
+    if (!errored || terminated) return
+    if (!messageId) throw new ApiError(0, '流中断且无法续传')
+    res = await httpResume(sessionId, messageId, lastEventId, signal)
+  }
+}
+
 export async function* sseChatStream(
   sessionId: string,
   text: string,
   signal: AbortSignal,
 ): AsyncIterable<SSEChunk> {
-  const res = await httpStream(`/chat/sessions/${sessionId}/stream`, { text }, signal)
-  const reader = res.body!.getReader()
-  const decoder = new TextDecoder()
-  const parser = createSSEParser()
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) yield chunk
-      if (signal.aborted) return
-    }
-    for (const chunk of parser.flush()) yield chunk
-  } finally {
-    reader.cancel().catch(() => {})
-  }
+  yield* runResumable(`/chat/sessions/${sessionId}/stream`, { text }, sessionId, signal)
 }
 
-/** 结束面试：SSE 流式返回报告（无请求体）。 */
 export async function* sseEndSession(
   sessionId: string,
   signal: AbortSignal,
 ): AsyncIterable<SSEChunk> {
-  const res = await httpStream(`/chat/sessions/${sessionId}/end`, {}, signal)
-  const reader = res.body!.getReader()
-  const decoder = new TextDecoder()
-  const parser = createSSEParser()
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) yield chunk
-      if (signal.aborted) return
-    }
-    for (const chunk of parser.flush()) yield chunk
-  } finally {
-    reader.cancel().catch(() => {})
-  }
+  yield* runResumable(`/chat/sessions/${sessionId}/end`, {}, sessionId, signal)
 }

@@ -65,8 +65,8 @@ def test_sse_resume_replays_from_cursor(client: TestClient, monkeypatch) -> None
     )
     assert stream.status_code == 200
     events = _events(stream.text)
-    message_id = next(e["message_id"] for e in events if e.get("type") == "meta")
-    last_id = max(e["event_id"] for e in events if "event_id" in e)
+    message_id = next(e["messageId"] for e in events if e.get("type") == "meta")
+    last_id = max(e["eventId"] for e in events if "eventId" in e)
     deltas = "".join(e.get("content", "") for e in events if e.get("type") == "delta")
     assert "你好" in deltas
 
