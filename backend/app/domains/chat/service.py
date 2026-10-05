@@ -1,5 +1,6 @@
 """chat 域 service：会话/消息 CRUD + 流式问答（检索 → LLM 作答）。"""
 
+import asyncio
 from collections.abc import AsyncIterator
 
 from fastapi import Request
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.llm import DeepSeekClient, fast_model
 from app.core.logging import get_logger
+from app.data.cache import sse
 from app.data.db.models.chat import Message, Session
 from app.data.db.models.report import InterviewReport
 from app.data.rag.embeddings import HFEmbedder
@@ -52,11 +54,27 @@ def _to_message(m: Message) -> MessageOut:
 
 
 class ChatService:
-    def __init__(self, sessionmaker, runner=None) -> None:
+    def __init__(self, sessionmaker, runner=None, redis=None) -> None:
         self._sessionmaker = sessionmaker
         self._runner = runner
+        self._redis = redis
         self._retriever = None
         self._llm = None
+        self._tasks: set[asyncio.Task] = set()
+
+    def _start_task(self, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
+    async def aclose(self) -> None:
+        for task in list(self._tasks):
+            task.cancel()
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+        if self._llm is not None:
+            await self._llm.aclose()
 
     def _client(self) -> DeepSeekClient:
         if self._llm is None:
@@ -118,60 +136,38 @@ class ChatService:
             )
             await s.commit()
 
-        if sess.mode == "interview":
-            if self._runner is None:
-                yield {"type": "error", "message": "面试服务未就绪"}
-                return
-            async for ev in self._stream_interview(sess, text, history):
-                yield ev
+        if sess.mode == "interview" and self._runner is None:
+            yield {"type": "error", "message": "面试服务未就绪"}
             return
 
-        try:
-            yield {"type": "status", "stage": "retrieving"}
-            retriever = await self._get_retriever()
-            hits = await retriever.retrieve(text)
-            sources = [
-                {
-                    "id": h["id"],
-                    "title": h["title"],
-                    "snippet": h["snippet"],
-                    "baseName": h.get("base_name"),
-                }
-                for h in hits
-            ]
-            if sources:
-                yield {"type": "sources", "items": sources}
+        async with self._sessionmaker() as s:
+            assistant = await repository.create_message(
+                s, sess.id, "assistant", "", status="streaming"
+            )
+            await s.commit()
+        message_id = assistant.id
 
-            yield {"type": "status", "stage": "answering"}
-            context = "\n\n".join(f"[来源:{h['title']}]\n{h['text'][:600]}" for h in hits)
-            question = f"参考资料：\n{context}\n\n问题：{text}" if context else text
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": question},
-            ]
-            parts: list[str] = []
-            async for ev in self._client().stream(messages, fast_model()):
-                if ev["type"] == "delta":
-                    parts.append(ev["content"])
-                    yield {"type": "delta", "content": ev["content"]}
+        producer = self._produce(sess, text, history)
+        task = self._start_task(self._consume_stream(sess, message_id, producer))
+        yield {"type": "meta", "message_id": message_id}
+        async for ev in self._tail(sess.id, message_id, task):
+            yield ev
 
-            async with self._sessionmaker() as s:
-                await repository.create_message(
-                    s, sess.id, "assistant", "".join(parts), sources=sources or None, status="done"
-                )
-                await s.commit()
-            yield {"type": "done"}
-        except Exception:
-            logger.exception("chat stream failed session=%s", sess.id)
-            yield {"type": "error", "message": "生成失败，请重试"}
+    async def resume(
+        self, sess: Session, message_id: str, last_event_id: int
+    ) -> AsyncIterator[dict]:
+        meta = await sse.get_meta(self._redis, sess.id, message_id)
+        if meta is None:
+            yield {"type": "error", "message": "流已过期或不存在"}
+            return
+        yield {"type": "meta", "message_id": message_id}
+        async for ev in self._tail(sess.id, message_id, None, start_seq=last_event_id):
+            yield ev
 
-    async def _stream_interview(
+    async def _produce(
         self, sess: Session, text: str, history: list[dict]
     ) -> AsyncIterator[dict]:
-        parts: list[str] = []
-        sources: list[dict] | None = None
-        report: dict | None = None
-        try:
+        if sess.mode == "interview":
             async for ev in self._runner.stream(
                 user_id=sess.user_id,
                 session_id=sess.id,
@@ -179,27 +175,106 @@ class ChatService:
                 history=history,
                 personal_context="",
             ):
+                yield ev
+            return
+
+        yield {"type": "status", "stage": "retrieving"}
+        retriever = await self._get_retriever()
+        hits = await retriever.retrieve(text)
+        sources = [
+            {
+                "id": h["id"],
+                "title": h["title"],
+                "snippet": h["snippet"],
+                "baseName": h.get("base_name"),
+            }
+            for h in hits
+        ]
+        if sources:
+            yield {"type": "sources", "items": sources}
+
+        yield {"type": "status", "stage": "answering"}
+        context = "\n\n".join(f"[来源:{h['title']}]\n{h['text'][:600]}" for h in hits)
+        question = f"参考资料：\n{context}\n\n问题：{text}" if context else text
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": question},
+        ]
+        async for ev in self._client().stream(messages, fast_model()):
+            if ev["type"] == "delta":
+                yield {"type": "delta", "content": ev["content"]}
+
+    async def _consume_stream(
+        self, sess: Session, message_id: str, producer: AsyncIterator[dict]
+    ) -> None:
+        parts: list[str] = []
+        sources: list[dict] | None = None
+        report: dict | None = None
+        seq = 0
+        await sse.set_meta(self._redis, sess.id, message_id, "running", 0)
+        try:
+            async for ev in producer:
+                if ev.get("type") == "done":
+                    continue
+                seq += 1
+                await sse.append_event(self._redis, sess.id, message_id, seq, ev)
                 if ev.get("type") == "report":
                     report = ev.get("report")
-                    continue  # 报告事件只在服务端消费，不下发前端
-                if ev.get("type") == "sources":
+                elif ev.get("type") == "sources":
                     sources = ev.get("items")
                 elif ev.get("type") == "delta":
                     parts.append(ev.get("content"))
-                if ev.get("type") == "done":
-                    continue  # 等落库成功后再发 done
-                yield ev
+
             async with self._sessionmaker() as s:
-                await repository.create_message(
-                    s, sess.id, "assistant", "".join(parts), sources=sources, status="done"
+                await repository.update_message(
+                    s, message_id, content="".join(parts), sources=sources, status="done"
                 )
                 await s.commit()
             if report is not None:
                 await self._save_report(sess, report)
-            yield {"type": "done"}
+            await sse.set_meta(self._redis, sess.id, message_id, "done", seq)
         except Exception:
-            logger.exception("interview stream failed session=%s", sess.id)
-            yield {"type": "error", "message": "生成失败，请重试"}
+            logger.exception("stream failed session=%s", sess.id)
+            seq += 1
+            await sse.append_event(
+                self._redis,
+                sess.id,
+                message_id,
+                seq,
+                {"type": "error", "message": "生成失败，请重试"},
+            )
+            async with self._sessionmaker() as s:
+                await repository.update_message(
+                    s, message_id, content="".join(parts), sources=sources, status="error"
+                )
+                await s.commit()
+            await sse.set_meta(self._redis, sess.id, message_id, "failed", seq)
+
+    async def _tail(
+        self,
+        session_id: str,
+        message_id: str,
+        task: asyncio.Task | None,
+        *,
+        start_seq: int = 0,
+    ) -> AsyncIterator[dict]:
+        cursor = start_seq
+        while True:
+            events = await sse.read_tail(self._redis, session_id, message_id, cursor)
+            for ev in events:
+                payload = dict(ev["payload"])
+                payload["event_id"] = ev["seq"]
+                yield payload
+                cursor = ev["seq"]
+            meta = await sse.get_meta(self._redis, session_id, message_id)
+            if meta is not None and meta["status"] in ("done", "failed"):
+                if meta["status"] == "done":
+                    yield {"type": "done"}
+                return
+            if task is not None and task.done():
+                yield {"type": "error", "message": "生成失败，请重试"}
+                return
+            await asyncio.sleep(0.3)
 
     async def end_interview(self, sess: Session) -> AsyncIterator[dict]:
         if self._runner is None:
@@ -275,6 +350,7 @@ def get_chat_service(request: Request) -> ChatService:
         svc = ChatService(
             request.app.state.sessionmaker,
             runner=getattr(request.app.state, "interview_runner", None),
+            redis=request.app.state.redis,
         )
         request.app.state.chat_service = svc
     return svc

@@ -91,6 +91,21 @@ async def create_message(
     return row
 
 
+async def update_message(
+    session: AsyncSession,
+    message_id: str,
+    *,
+    content: str,
+    sources: list[dict] | None = None,
+    status: str = "done",
+) -> None:
+    await session.execute(
+        update(Message)
+        .where(Message.id == message_id)
+        .values(content=content, sources=sources, status=status)
+    )
+
+
 async def touch_session(
     session: AsyncSession, session_id: str, user_id: str, title: str | None = None
 ) -> None:

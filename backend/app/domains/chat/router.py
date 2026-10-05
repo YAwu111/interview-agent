@@ -72,6 +72,31 @@ async def stream(
     )
 
 
+@router.get("/sessions/{session_id}/messages/{message_id}/stream")
+async def resume_stream(
+    session_id: str,
+    message_id: str,
+    request: Request,
+    svc=Depends(get_chat_service),
+):
+    sess = await _owned_session(request, session_id, svc)
+    raw = request.headers.get("last-event-id", "0")
+    try:
+        last_event_id = int(raw)
+    except ValueError:
+        last_event_id = 0
+
+    async def events():
+        async for ev in svc.resume(sess, message_id, last_event_id):
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/sessions/{session_id}/stop")
 async def stop(session_id: str, request: Request, svc=Depends(get_chat_service)):
     await _owned_session(request, session_id, svc)
