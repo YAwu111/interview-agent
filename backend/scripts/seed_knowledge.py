@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import sys
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -17,8 +18,17 @@ from app.data.rag.vector_store import PgVectorStore
 async def main(text: str, path: str, base_name: str) -> None:
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
     sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     async with sessionmaker() as s:
+        existing = (
+            await s.scalars(select(Document).where(Document.content_hash == content_hash))
+        ).first()
+        if existing is not None:
+            await engine.dispose()
+            print(f"已存在相同内容，跳过（{existing.name}）")
+            return
+
         base = KnowledgeBase(name=base_name)
         s.add(base)
         await s.flush()
@@ -27,16 +37,25 @@ async def main(text: str, path: str, base_name: str) -> None:
             name=path,
             size=len(text.encode("utf-8")),
             status="indexing",
-            content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            content_hash=content_hash,
         )
         s.add(doc)
         await s.flush()
         doc_id = doc.id
         await s.commit()
 
-    chunks = SentenceChunker(settings.chunk_size, settings.chunk_overlap).chunk(text)
-    vectors = await HFEmbedder(settings.embedding_model).embed(chunks)
-    await PgVectorStore(sessionmaker).upsert(doc_id, chunks, vectors)
+    try:
+        chunks = SentenceChunker(settings.chunk_size, settings.chunk_overlap).chunk(text)
+        vectors = await HFEmbedder(settings.embedding_model).embed(chunks)
+        await PgVectorStore(sessionmaker).upsert(doc_id, chunks, vectors)
+    except Exception:
+        async with sessionmaker() as s:
+            row = await s.get(Document, doc_id)
+            if row is not None:
+                row.status = "failed"
+                await s.commit()
+        await engine.dispose()
+        raise
 
     async with sessionmaker() as s:
         row = await s.get(Document, doc_id)

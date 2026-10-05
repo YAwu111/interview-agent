@@ -66,6 +66,7 @@ class HybridRetriever:
             {
                 "id": h["id"],
                 "title": h.get("title", ""),
+                "text": h["text"],
                 "snippet": h["text"][:200],
                 "base_name": h.get("base_name"),
                 "score": h.get("score", 0.0),
