@@ -1,5 +1,5 @@
 import jwt
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.exceptions import AppError
@@ -23,9 +23,11 @@ async def get_token_payload(
         raise UNAUTHORIZED from None
 
 
-async def get_current_user(payload: dict = Depends(get_token_payload)) -> str:
+async def get_current_user(request: Request, payload: dict = Depends(get_token_payload)) -> str:
     """当前用户 id（不查库；需要用户实体的端点自行按 id 加载）。"""
-    return payload["sub"]
+    user_id = payload["sub"]
+    request.state.user_id = user_id  # 供 domains 经 request.state 读取，避免反向 import
+    return user_id
 
 
 def require_scope(scope: str):

@@ -1,7 +1,10 @@
 from functools import lru_cache
 
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+load_dotenv()  # 把 .env 注入 os.environ，供 huggingface_hub / langsmith 等第三方库读取
 
 _WEAK_JWT_SECRETS = {
     "dev-secret-change-me",
@@ -37,7 +40,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_api_key: str = ""
     llm_model_fast: str = "deepseek-chat"
-    llm_model_strong: str = "deepseek-v4-pro"
+    llm_model_strong: str = ""  # 为空时回退 llm_model_fast；deepseek-v4-pro 经 .env 覆盖
     langsmith_tracing: bool = False
     langsmith_api_key: str = ""
     langsmith_project: str = "interview-agent"

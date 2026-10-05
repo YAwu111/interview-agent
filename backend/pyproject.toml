@@ -24,6 +24,7 @@ dependencies = [
     "itsdangerous",
     "httpx",
     "pgvector",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]

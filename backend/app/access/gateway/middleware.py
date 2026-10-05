@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -52,9 +53,9 @@ def add_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_req: Request, exc: RequestValidationError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
     @app.exception_handler(Exception)
     async def unhandled_handler(_req: Request, exc: Exception) -> JSONResponse:
-        logger.error("unhandled_exception", error=str(exc))
+        logger.error("unhandled_exception", error=str(exc), exc_info=exc)
         return JSONResponse(status_code=500, content={"detail": "内部服务器错误"})
