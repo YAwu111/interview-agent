@@ -19,6 +19,14 @@ const toApiError = (err: unknown): ApiError => {
     const message =
       typeof detail === 'string'
         ? detail
+        : Array.isArray(detail)
+          ? detail
+              .map((d) =>
+                typeof d === 'object' && d !== null && 'msg' in d
+                  ? String((d as { msg: unknown }).msg)
+                  : JSON.stringify(d),
+              )
+              .join('; ')
         : err.code === 'ERR_CANCELED'
           ? '请求已取消'
           : err.code === 'ECONNABORTED'
