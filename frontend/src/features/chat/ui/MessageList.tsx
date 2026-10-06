@@ -55,10 +55,17 @@ function MessageRow({ message }: { message: ChatMessage }) {
 
 export function MessageList({ messages }: { messages: ChatMessage[] }) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const prevCount = useRef(messages.length)
   const lastLen = messages.length ? messages[messages.length - 1].content.length : 0
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
+    const el = bottomRef.current
+    if (!el) return
+    const isNewMessage = messages.length !== prevCount.current
+    prevCount.current = messages.length
+    const rect = el.getBoundingClientRect()
+    const nearBottom = rect.bottom <= window.innerHeight + 40
+    if (isNewMessage || nearBottom) el.scrollIntoView({ block: 'end' })
   }, [messages.length, lastLen])
 
   if (messages.length === 0) {

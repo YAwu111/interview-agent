@@ -57,10 +57,20 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   createSession: async (mode) => {
-    const s = await chatApi.createSession(mode)
-    set((st) => ({ sessions: [s, ...st.sessions], activeSessionId: s.id, messages: [], error: null }))
-    if (mode === 'interview' && !suppressAutoOpen) void get().sendMessage('开始面试')
-    return s
+    try {
+      const s = await chatApi.createSession(mode)
+      set((st) => ({
+        sessions: [s, ...st.sessions],
+        activeSessionId: s.id,
+        messages: [],
+        error: null,
+      }))
+      if (mode === 'interview' && !suppressAutoOpen) void get().sendMessage('开始面试')
+      return s
+    } catch (e) {
+      set({ error: errText(e) })
+      throw e
+    }
   },
 
   selectSession: async (id) => {
@@ -116,7 +126,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             }
           } finally {
             abortController = null
-            invalidateCache(`GET:/chat/sessions/${id}/messages`)
+            invalidateCache(`GET:/chat/sessions/${id}/messages:`)
             set((st) => ({
               isStreaming: false,
               status: null,
@@ -244,7 +254,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       }
     } finally {
       abortController = null
-      invalidateCache(`GET:/chat/sessions/${sessionId}/messages`)
+      invalidateCache(`GET:/chat/sessions/${sessionId}/messages:`)
+      invalidateCache('GET:/chat/sessions:')
       set((st) => ({
         isStreaming: false,
         status: null,
@@ -311,7 +322,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }
       } finally {
         abortController = null
-        invalidateCache(`GET:/chat/sessions/${activeSessionId}/messages`)
+        invalidateCache(`GET:/chat/sessions/${activeSessionId}/messages:`)
+        invalidateCache('GET:/chat/sessions:')
         set((st) => ({
           isStreaming: false,
           status: null,

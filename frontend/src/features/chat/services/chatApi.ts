@@ -15,7 +15,7 @@ const live: ChatApi = {
         }),
       { method: 'POST', path: '/api/v1/chat/sessions', body: { mode } },
     ).then((session) => {
-      invalidateCache('GET:/chat/sessions')
+      invalidateCache('GET:/chat/sessions:')
       return session
     }),
   updateSession: (id, patch) =>
@@ -25,15 +25,15 @@ const live: ChatApi = {
           headers: { 'Idempotency-Key': key },
         }),
       { method: 'PATCH', path: `/api/v1/chat/sessions/${id}`, body: patch },
-    ).then(() => invalidateCache('GET:/chat/sessions')),
+    ).then(() => invalidateCache('GET:/chat/sessions:')),
   deleteSession: (id) =>
     idempotentWrite(
       (key) =>
         apiDelete(`/chat/sessions/${id}`, { headers: { 'Idempotency-Key': key } }),
       { method: 'DELETE', path: `/api/v1/chat/sessions/${id}` },
     ).then(() => {
-      invalidateCache('GET:/chat/sessions')
-      invalidateCache(`GET:/chat/sessions/${id}/messages`)
+      invalidateCache('GET:/chat/sessions:')
+      invalidateCache(`GET:/chat/sessions/${id}/messages:`)
     }),
   getMessages: (sessionId) =>
     resilientGet<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`, undefined, { dedupe: true }),

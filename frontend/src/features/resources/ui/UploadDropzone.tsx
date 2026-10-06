@@ -57,7 +57,7 @@ export function UploadDropzone() {
       {tasks.length > 0 && (
         <div className="mt-3 flex flex-col gap-2">
           {tasks.map((task) => (
-            <div key={task.name} className="text-xs">
+            <div key={task.id} className="text-xs">
               <div className="mb-1 flex justify-between">
                 <span className="truncate">{task.name}</span>
                 {task.error ? (

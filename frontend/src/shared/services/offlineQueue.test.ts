@@ -30,12 +30,17 @@ test('FIFO 串行重放成功并移除队列', async () => {
   assert.equal((await storage.list()).length, 0)
 })
 
-test('409 视为已执行成功，从队列移除', async () => {
+test('409 按进行中重试，原请求完成后命中成功', async () => {
   const storage = memoryStorage()
   await storage.put(item({}))
-  const fetchImpl = (async () => ({ status: 409 }) as Response) as unknown as typeof fetch
+  let calls = 0
+  const fetchImpl = (async () => {
+    calls++
+    return { status: calls === 1 ? 409 : 200 } as Response
+  }) as unknown as typeof fetch
   const result = await flushQueue({ storage, fetchImpl, getToken: () => null, backoff: backoff0 })
   assert.equal(result.replayed, 1)
+  assert.equal(calls, 2)
   assert.equal((await storage.list()).length, 0)
 })
 

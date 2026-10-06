@@ -25,7 +25,11 @@ export function SessionSidebar() {
   return (
     <div className="flex h-full flex-col bg-sidebar">
       <div className="p-3">
-        <Button className="w-full" variant="outline" onClick={() => void createSession(pendingMode)}>
+        <Button
+          className="w-full"
+          variant="outline"
+          onClick={() => void createSession(pendingMode).catch(() => {})}
+        >
           <Plus /> {t.chat.newChat}
         </Button>
       </div>

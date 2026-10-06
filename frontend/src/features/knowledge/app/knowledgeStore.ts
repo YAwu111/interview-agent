@@ -4,6 +4,7 @@ import { validateUploadFile } from '@/shared/lib/constants'
 import { knowledgeApi } from '../services/knowledgeApi'
 
 interface UploadTask {
+  id: string
   name: string
   percent: number
   error?: string
@@ -49,29 +50,42 @@ export const useKnowledgeStore = create<KnowledgeState>()((set, get) => ({
   upload: async (file) => {
     const baseId = get().activeBaseId
     if (!baseId) return
+    const taskId = crypto.randomUUID()
     const v = validateUploadFile(file)
     if (!v.ok) {
       set((st) => ({
-        uploads: { ...st.uploads, [file.name]: { name: file.name, percent: 0, error: v.error } },
+        uploads: {
+          ...st.uploads,
+          [taskId]: { id: taskId, name: file.name, percent: 0, error: v.error },
+        },
       }))
       return
     }
-    set((st) => ({ uploads: { ...st.uploads, [file.name]: { name: file.name, percent: 0 } } }))
+    set((st) => ({
+      uploads: { ...st.uploads, [taskId]: { id: taskId, name: file.name, percent: 0 } },
+    }))
     try {
       await knowledgeApi.uploadDocument(baseId, file, (percent) =>
-        set((st) => ({ uploads: { ...st.uploads, [file.name]: { name: file.name, percent } } })),
+        set((st) => ({
+          uploads: { ...st.uploads, [taskId]: { id: taskId, name: file.name, percent } },
+        })),
       )
       set((st) => {
         const uploads = { ...st.uploads }
-        delete uploads[file.name]
+        delete uploads[taskId]
         return { uploads }
       })
-      await get().selectBase(baseId)
+      if (get().activeBaseId === baseId) await get().selectBase(baseId)
     } catch (e) {
       set((st) => ({
         uploads: {
           ...st.uploads,
-          [file.name]: { name: file.name, percent: 0, error: e instanceof Error ? e.message : 'failed' },
+          [taskId]: {
+            id: taskId,
+            name: file.name,
+            percent: 0,
+            error: e instanceof Error ? e.message : 'failed',
+          },
         },
       }))
     }

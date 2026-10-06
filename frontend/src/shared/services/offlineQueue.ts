@@ -110,8 +110,9 @@ async function replayOnce(
           continue
         }
       }
-      if ((res.status >= 200 && res.status < 300) || res.status === 409) return true
-      if (!RETRIABLE_STATUSES.has(res.status)) return false
+      if (res.status >= 200 && res.status < 300) return true
+      // 409 = 幂等键进行中/冲突：重试，等原请求完成后同 key 会命中已完成结果
+      if (res.status !== 409 && !RETRIABLE_STATUSES.has(res.status)) return false
     } catch {
       // 网络错误：继续按退避重试
     }

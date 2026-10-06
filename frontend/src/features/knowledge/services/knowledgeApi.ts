@@ -14,7 +14,7 @@ const live: KnowledgeApi = {
         }),
       { method: 'POST', path: '/api/v1/knowledge/bases', body: { name } },
     ).then((base) => {
-      invalidateCache('GET:/knowledge/bases')
+      invalidateCache('GET:/knowledge/bases:')
       return base
     }),
   listDocuments: (baseId) =>
@@ -27,7 +27,8 @@ const live: KnowledgeApi = {
       file,
       onProgress,
     )
-    invalidateCache(`GET:/knowledge/bases/${baseId}/documents`)
+    invalidateCache(`GET:/knowledge/bases/${baseId}/documents:`)
+    invalidateCache('GET:/knowledge/bases:')
     return doc
   },
   deleteDocument: (id) =>
@@ -35,7 +36,10 @@ const live: KnowledgeApi = {
       (key) =>
         apiDelete(`/knowledge/documents/${id}`, { headers: { 'Idempotency-Key': key } }),
       { method: 'DELETE', path: `/api/v1/knowledge/documents/${id}` },
-    ).then(() => invalidateCache('GET:/knowledge')),
+    ).then(() => {
+      invalidateCache('GET:/knowledge/bases:')
+      invalidateCache('GET:/knowledge/bases/')
+    }),
 }
 
 export const knowledgeApi: KnowledgeApi = API_MODE === 'mock' ? mockKnowledge : live

@@ -21,6 +21,12 @@ export function readSseCursor(sessionId: string, messageId: string): number {
   return Number.isFinite(value) ? value : 0
 }
 
+function clearCursor(sessionId: string, messageId: string): void {
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(`sse:${sessionId}:${messageId}`)
+  }
+}
+
 async function httpPost(
   path: string,
   body: unknown,
@@ -77,6 +83,7 @@ async function* runResumable(
 ): AsyncIterable<SSEChunk> {
   let messageId: string | null = null
   let lastEventId = 0
+  let resumes = 0
   let res = await httpPost(path, body, signal)
 
   for (;;) {
@@ -90,7 +97,10 @@ async function* runResumable(
         const { done, value } = await reader.read()
         if (done) break
         for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) {
-          if (chunk.type === 'meta') messageId = chunk.messageId
+          if (chunk.type === 'meta') {
+            messageId = chunk.messageId
+            continue
+          }
           if (chunk.eventId !== undefined) {
             lastEventId = Math.max(lastEventId, chunk.eventId)
             if (messageId) persistCursor(sessionId, messageId, lastEventId)
@@ -101,7 +111,10 @@ async function* runResumable(
         if (signal.aborted) return
       }
       for (const chunk of parser.flush()) {
-        if (chunk.type === 'meta') messageId = chunk.messageId
+        if (chunk.type === 'meta') {
+          messageId = chunk.messageId
+          continue
+        }
         if (chunk.eventId !== undefined) {
           lastEventId = Math.max(lastEventId, chunk.eventId)
           if (messageId) persistCursor(sessionId, messageId, lastEventId)
@@ -116,8 +129,10 @@ async function* runResumable(
       reader.cancel().catch(() => {})
     }
 
+    if (terminated && messageId) clearCursor(sessionId, messageId)
     if (!errored || terminated) return
     if (!messageId) throw new ApiError(0, '流中断且无法续传')
+    if (++resumes > 8) throw new ApiError(0, '连接反复中断，请稍后重试')
 
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
@@ -157,14 +172,24 @@ export async function* sseResumeSession(
   const reader = res.body!.getReader()
   const decoder = new TextDecoder()
   const parser = createSSEParser()
+  let terminated = false
   try {
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) yield chunk
+      for (const chunk of parser.feedText(decoder.decode(value, { stream: true }))) {
+        if (chunk.type === 'meta') continue
+        if (chunk.type === 'done' || chunk.type === 'error') terminated = true
+        yield chunk
+      }
       if (signal.aborted) return
     }
-    for (const chunk of parser.flush()) yield chunk
+    for (const chunk of parser.flush()) {
+      if (chunk.type === 'meta') continue
+      if (chunk.type === 'done' || chunk.type === 'error') terminated = true
+      yield chunk
+    }
+    if (terminated) clearCursor(sessionId, messageId)
   } finally {
     reader.cancel().catch(() => {})
   }
