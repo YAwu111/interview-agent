@@ -7,7 +7,7 @@ export type RetryPolicy = {
   retryOn?: (err: unknown) => boolean
 }
 
-const RETRIABLE_STATUSES = new Set([408, 429, 502, 503, 504])
+export const RETRIABLE_STATUSES = new Set([408, 429, 502, 503, 504])
 
 export function isRetriable(err: unknown): boolean {
   if (!(err instanceof ApiError)) return false

@@ -70,7 +70,11 @@ export async function idempotentWrite<T>(
     return await run(key)
   } catch (err) {
     if (isRetriable(err)) {
-      await enqueueWrite({ ...descriptor, id: key, key, createdAt: Date.now() })
+      try {
+        await enqueueWrite({ ...descriptor, id: key, key, createdAt: Date.now() })
+      } catch {
+        throw err
+      }
       throw new ApiError(0, '网络异常，操作已排队，联网后自动重试')
     }
     throw err

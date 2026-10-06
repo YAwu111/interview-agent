@@ -1,4 +1,4 @@
-import { backoffDelay } from './resilience/retry.ts'
+import { backoffDelay, RETRIABLE_STATUSES } from './resilience/retry.ts'
 
 export type QueueMethod = 'POST' | 'PATCH' | 'DELETE'
 
@@ -9,6 +9,7 @@ export type QueueItem = {
   path: string
   body?: unknown
   createdAt: number
+  order?: number
 }
 
 export interface QueueStorage {
@@ -76,7 +77,7 @@ export const indexedDbStorage: QueueStorage = {
 export const defaultStorage: QueueStorage =
   typeof indexedDB !== 'undefined' ? indexedDbStorage : memoryStorage()
 
-const RETRIABLE = new Set([408, 429, 502, 503, 504])
+let orderSeq = 0
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -85,9 +86,12 @@ function sleep(ms: number): Promise<void> {
 async function replayOnce(
   item: QueueItem,
   fetchImpl: typeof fetch,
-  token: string | null,
+  getToken: () => string | null,
+  refreshToken: () => Promise<string | null>,
   backoff: (attempt: number) => number,
 ): Promise<boolean> {
+  let token = getToken()
+  let tokenRefreshed = false
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -98,8 +102,16 @@ async function replayOnce(
         headers,
         body: item.body === undefined ? undefined : JSON.stringify(item.body),
       })
+      if (res.status === 401 && !tokenRefreshed) {
+        const next = await refreshToken()
+        if (next) {
+          token = next
+          tokenRefreshed = true
+          continue
+        }
+      }
       if ((res.status >= 200 && res.status < 300) || res.status === 409) return true
-      if (!RETRIABLE.has(res.status)) return false
+      if (!RETRIABLE_STATUSES.has(res.status)) return false
     } catch {
       // 网络错误：继续按退避重试
     }
@@ -108,34 +120,42 @@ async function replayOnce(
   return false
 }
 
-export type FlushResult = { replayed: number; failed: QueueItem | null }
+export type FlushResult = { replayed: number; failed: QueueItem[] }
 
 export async function flushQueue(opts: {
   storage: QueueStorage
   fetchImpl?: typeof fetch
   getToken: () => string | null
+  refreshToken?: () => Promise<string | null>
   onError?: (item: QueueItem) => void
   backoff?: (attempt: number) => number
 }): Promise<FlushResult> {
   const fetchImpl = opts.fetchImpl ?? fetch
+  const refreshToken = opts.refreshToken ?? (async () => null)
   const backoff = opts.backoff ?? ((attempt: number) => backoffDelay(attempt, 500, 8_000))
-  const items = (await opts.storage.list()).sort((a, b) => a.createdAt - b.createdAt)
+  const items = (await opts.storage.list()).sort(
+    (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt,
+  )
   let replayed = 0
+  const failed: QueueItem[] = []
   for (const item of items) {
-    const ok = await replayOnce(item, fetchImpl, opts.getToken(), backoff)
+    const ok = await replayOnce(item, fetchImpl, opts.getToken, refreshToken, backoff)
     if (!ok) {
+      await opts.storage.remove(item.id)
+      failed.push(item)
       opts.onError?.(item)
-      return { replayed, failed: item }
+      continue
     }
     await opts.storage.remove(item.id)
     replayed++
   }
-  return { replayed, failed: null }
+  return { replayed, failed }
 }
 
 export function installOfflineQueue(opts: {
   storage: QueueStorage
   getToken: () => string | null
+  refreshToken?: () => Promise<string | null>
   onError?: (item: QueueItem) => void
   onFlush?: (result: FlushResult) => void
 }): { flush: () => Promise<FlushResult> } {
@@ -143,6 +163,7 @@ export function installOfflineQueue(opts: {
     flushQueue({
       storage: opts.storage,
       getToken: opts.getToken,
+      refreshToken: opts.refreshToken,
       onError: opts.onError,
     }).then((result) => {
       opts.onFlush?.(result)
@@ -151,9 +172,10 @@ export function installOfflineQueue(opts: {
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => void flush())
   }
+  void flush()
   return { flush }
 }
 
 export function enqueueWrite(item: QueueItem): Promise<void> {
-  return defaultStorage.put(item)
+  return defaultStorage.put({ ...item, order: ++orderSeq })
 }

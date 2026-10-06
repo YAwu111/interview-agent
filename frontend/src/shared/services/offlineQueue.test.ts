@@ -53,11 +53,11 @@ test('瞬时网络错误按退避重试后成功', async () => {
   assert.equal(calls, 3)
 })
 
-test('非可重试 4xx 停止队列并回调失败项', async () => {
+test('毒项不阻塞后续：失败项移除，后续继续重放', async () => {
   const storage = memoryStorage()
   await storage.put(item({ id: '1', path: '/a' }))
   await storage.put(item({ id: '2', path: '/b' }))
-  const state: { failed: QueueItem | null } = { failed: null }
+  const state: { failed: QueueItem[] } = { failed: [] }
   const fetchImpl = (async (input: RequestInfo | URL) => {
     return { status: String(input) === '/a' ? 400 : 200 } as Response
   }) as unknown as typeof fetch
@@ -66,10 +66,31 @@ test('非可重试 4xx 停止队列并回调失败项', async () => {
     fetchImpl,
     getToken: () => null,
     backoff: backoff0,
-    onError: (i) => (state.failed = i),
+    onError: (i) => state.failed.push(i),
   })
-  assert.equal(result.replayed, 0)
-  assert.equal(result.failed?.id, '1')
-  assert.equal(state.failed?.id, '1')
-  assert.equal((await storage.list()).length, 2)
+  assert.equal(result.replayed, 1)
+  assert.equal(result.failed.length, 1)
+  assert.equal(result.failed[0].id, '1')
+  assert.equal(state.failed[0].id, '1')
+  assert.equal((await storage.list()).length, 0)
+})
+
+test('重放 401 时刷新令牌后重试', async () => {
+  const storage = memoryStorage()
+  await storage.put(item({}))
+  const auth: (string | null)[] = []
+  const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const token = (init?.headers as Record<string, string> | undefined)?.Authorization ?? null
+    auth.push(token)
+    return { status: token === 'Bearer new' ? 200 : 401 } as Response
+  }) as unknown as typeof fetch
+  const result = await flushQueue({
+    storage,
+    fetchImpl,
+    getToken: () => 'old',
+    refreshToken: async () => 'new',
+    backoff: backoff0,
+  })
+  assert.equal(result.replayed, 1)
+  assert.deepEqual(auth, ['Bearer old', 'Bearer new'])
 })
