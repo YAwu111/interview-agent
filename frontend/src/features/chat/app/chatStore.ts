@@ -324,16 +324,21 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         abortController = null
         invalidateCache(`GET:/chat/sessions/${activeSessionId}/messages:`)
         invalidateCache('GET:/chat/sessions:')
+        const sameSession = get().activeSessionId === activeSessionId
         set((st) => ({
           isStreaming: false,
           status: null,
           messages: st.messages.map((m) =>
             m.id === reportMsg.id && m.status === 'streaming' ? { ...m, status: 'done' } : m,
           ),
-          sessions: st.sessions.map((s) =>
-            s.id === activeSessionId ? { ...s, mode: 'chat' as ChatMode } : s,
-          ),
-          pendingMode: 'chat',
+          ...(sameSession
+            ? {
+                sessions: st.sessions.map((s) =>
+                  s.id === activeSessionId ? { ...s, mode: 'chat' as ChatMode } : s,
+                ),
+                pendingMode: 'chat' as ChatMode,
+              }
+            : {}),
         }))
       }
     })()

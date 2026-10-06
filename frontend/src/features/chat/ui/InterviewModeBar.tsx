@@ -6,7 +6,13 @@ import { t } from '@/shared/lib/locale/zh'
 export function InterviewModeBar() {
   const { activeSession, messages, endInterview } = useChat()
   if (!activeSession || activeSession.mode !== 'interview') return null
-  const round = messages.filter((m) => m.role === 'assistant').length + 1
+  const turns = messages.filter(
+    (m) =>
+      m.role === 'assistant' &&
+      m.status !== 'error' &&
+      !m.content.startsWith('# 面试报告'),
+  ).length
+  const round = turns + 1
   return (
     <div className="flex shrink-0 items-center justify-between border-b bg-muted/60 px-4 py-2">
       <span className="text-xs font-medium text-primary">{t.chat.interviewRound(round)}</span>

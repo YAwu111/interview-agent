@@ -11,6 +11,7 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const oauthError = (location.state as { error?: string } | null)?.error ?? null
+  const from = (location.state as { from?: string } | null)?.from ?? '/'
   const { login, oauth, status, error } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -20,7 +21,7 @@ export function LoginPage() {
     e.preventDefault()
     try {
       await login(email, password)
-      navigate('/', { replace: true })
+      navigate(from, { replace: true })
     } catch {
       /* error 已在 store 中 */
     }
@@ -29,7 +30,7 @@ export function LoginPage() {
   const oauthLogin = async (provider: 'github' | 'google') => {
     try {
       await oauth(provider)
-      navigate('/', { replace: true })
+      navigate(from, { replace: true })
     } catch {
       /* mock 模式下直接返回；live 为整页跳转 */
     }

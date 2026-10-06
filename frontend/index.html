@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>面试 Agent</title>
+    <script>
+      try {
+        var raw = localStorage.getItem('ia-theme')
+        var mode = raw ? JSON.parse(raw).state.mode : 'light'
+        if (mode === 'dark') document.documentElement.classList.add('dark')
+      } catch (e) {
+        /* 忽略损坏的本地主题配置 */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
