@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Form
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.access.gateway.rate_limit import RateLimiter
 from app.core.exceptions import AppError
 from app.data.db.models.auth import User
 from app.data.db.session import get_session
@@ -32,7 +33,7 @@ async def _auth_response(session: AsyncSession, user: User) -> AuthResponse:
     )
 
 
-@router.post("/register")
+@router.post("/register", dependencies=[Depends(RateLimiter())])
 async def register(
     body: RegisterRequest, session: AsyncSession = Depends(get_session)
 ) -> AuthResponse:
@@ -52,7 +53,7 @@ async def register(
     return await _auth_response(session, user)
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(RateLimiter())])
 async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)) -> AuthResponse:
     user = await repository.get_user_by_email(session, body.email)
     # 统一 401，不区分账号不存在/密码错误（防枚举）
