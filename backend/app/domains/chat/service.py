@@ -54,10 +54,11 @@ def _to_message(m: Message) -> MessageOut:
 
 
 class ChatService:
-    def __init__(self, sessionmaker, runner=None, redis=None) -> None:
+    def __init__(self, sessionmaker, runner=None, redis=None, usage_sink=None) -> None:
         self._sessionmaker = sessionmaker
         self._runner = runner
         self._redis = redis
+        self._usage_sink = usage_sink
         self._retriever = None
         self._llm = None
         self._tasks: set[asyncio.Task] = set()
@@ -226,9 +227,23 @@ class ChatService:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": question},
         ]
+        usage: dict = {}
         async for ev in self._client().stream(messages, fast_model()):
             if ev["type"] == "delta":
                 yield {"type": "delta", "content": ev["content"]}
+            elif ev["type"] == "usage":
+                usage = ev.get("usage", {})
+        if self._usage_sink and usage:
+            await self._usage_sink.record(
+                sess.user_id,
+                {
+                    "node": "answer",
+                    "model": fast_model(),
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "latency_ms": 0,
+                },
+            )
 
     async def _consume_stream(
         self, sess: Session, message_id: str, producer: AsyncIterator[dict]
@@ -380,6 +395,7 @@ def get_chat_service(request: Request) -> ChatService:
             request.app.state.sessionmaker,
             runner=getattr(request.app.state, "interview_runner", None),
             redis=request.app.state.redis,
+            usage_sink=getattr(request.app.state, "usage_sink", None),
         )
         request.app.state.chat_service = svc
     return svc

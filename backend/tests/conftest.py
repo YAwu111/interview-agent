@@ -16,6 +16,7 @@ from app.access.auth.code_store import RedisCodeStore, get_code_store
 from app.core.config import settings
 from app.data.db.models import Base
 from app.data.db.session import get_session
+from app.telemetry.collector.usage import RedisUsageSink
 from main import app
 
 
@@ -101,6 +102,8 @@ def client() -> Generator[TestClient]:
     with TestClient(app) as c:
         # 指向测试库；避免 ChatService 等经 app.state 误用开发库
         app.state.sessionmaker = TestSession
+        app.state.redis = make_redis()
+        app.state.usage_sink = RedisUsageSink(make_redis(), TestSession)
         app.state.chat_service = None
         yield c
 

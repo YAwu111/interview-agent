@@ -17,6 +17,7 @@ from app.data.db.engine import build_engine, build_sessionmaker
 from app.data.repositories.idempotency import prune_expired
 from app.domains.chat.repository import fail_stale_streaming
 from app.orchestration.agents.interview.factory import build_interview_runner
+from app.telemetry.collector.usage import RedisUsageSink
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.db_engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
     app.state.redis = build_redis()
-    app.state.interview_runner = build_interview_runner(app.state.sessionmaker)
+    app.state.usage_sink = RedisUsageSink(app.state.redis, app.state.sessionmaker)
+    app.state.interview_runner = build_interview_runner(
+        app.state.sessionmaker, usage_sink=app.state.usage_sink
+    )
     try:
         async with app.state.sessionmaker() as s:
             older_than = datetime.now(UTC) - timedelta(minutes=10)

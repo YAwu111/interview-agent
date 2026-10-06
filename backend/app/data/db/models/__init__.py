@@ -7,6 +7,7 @@ from .idempotency import IdempotencyRecord
 from .knowledge import Chunk, Document, KnowledgeBase
 from .report import InterviewReport
 from .resources import Resource
+from .usage import UsageDaily
 
 __all__ = [
     "Base",
@@ -21,4 +22,5 @@ __all__ = [
     "KnowledgeBase",
     "InterviewReport",
     "Resource",
+    "UsageDaily",
 ]
